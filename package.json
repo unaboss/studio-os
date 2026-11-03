@@ -1,0 +1,31 @@
+{
+  "name": "studio-os",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Studio OS: the operating system for small software studios",
+  "license": "MIT",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "modules/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w apps/web",
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "seed": "npm run seed -w apps/api"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.3.16",
+    "@types/node": "22.20.5",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3",
+    "vitest": "3.2.7"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
