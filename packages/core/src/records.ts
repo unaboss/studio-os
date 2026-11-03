@@ -101,6 +101,7 @@ export class RecordStore
         }
         const status = input.status ?? rt.statuses[0]
         if (!status || !rt.statuses.includes(status)) throw new ValidationError([`"${input.status}" is not a status of ${rt.label}`])
+        this.checkEmployeeWrite(rt, input.status !== undefined && input.status !== rt.statuses[0] ? status : null)
         const data = validateData(rt, input.data ?? {})
         const id = input.id ?? newId(rt.type.slice(0, 4))
         const rows = await this.ctx.db.query<Row>(
@@ -169,6 +170,7 @@ export class RecordStore
         }
         const status = patch.status ?? before.status
         if (!rt.statuses.includes(status)) throw new ValidationError([`"${status}" is not a status of ${rt.label}`])
+        this.checkEmployeeWrite(rt, status !== before.status ? status : null)
         const title = patch.title?.trim() || before.title
         const data = { ...before.data, ...changes }
         const rows = await this.ctx.db.query<Row>(
@@ -184,6 +186,15 @@ export class RecordStore
             await this.ctx.events.emit(`${rt.type}.${slug(status)}`, { recordId: id, payload })
         }
         return redact(this.ctx.actor, rt, after)
+    }
+
+    /** Employees cannot approve their own claims or touch read-only records. */
+    private checkEmployeeWrite(rt: RecordTypeDef, newStatus: string | null): void
+    {
+        const a = this.ctx.actor
+        if (a.kind !== 'user' || a.role === 'manager') return
+        if (rt.employeeEditable === false) throw new ForbiddenError(`Only managers can change ${rt.plural.toLowerCase()}`)
+        if (newStatus && rt.managerStatuses?.includes(newStatus)) throw new ForbiddenError(`Only managers can mark ${rt.plural.toLowerCase()} ${newStatus.toLowerCase()}`)
     }
 
     async setStatus(id: string, status: string): Promise<StoredRecord>

@@ -53,6 +53,10 @@ export interface RecordTypeDef
     readonly visibility?: Visibility
     /** For `assigned` visibility: the `user` or `users` field that grants access. */
     readonly assigneeField?: string
+    /** Statuses only a manager may set, such as Approved or Reimbursed. */
+    readonly managerStatuses?: readonly string[]
+    /** false: employees may read these records but never create or change them (payslips). */
+    readonly employeeEditable?: boolean
 }
 
 export interface StoredRecord

@@ -181,6 +181,15 @@ export function parseBankCsv(csv: string): BankLine[]
         }
     }
 
+    return withFingerprints(raw)
+}
+
+/**
+ * Gives each line a stable fingerprint. Two identical lines on one day (two
+ * R50 airtime buys) stay distinct by their position among identical lines.
+ */
+export function withFingerprints(raw: readonly Omit<BankLine, 'fingerprint'>[]): BankLine[]
+{
     const seen = new Map<string, number>()
     return raw.map((l) => {
         const key = `${l.date}|${l.amount}|${l.balance ?? ''}|${l.description.toLowerCase()}`

@@ -1,0 +1,30 @@
+{
+  "name": "@studio-os/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/app.ts",
+  "exports": { ".": "./src/app.ts" },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "1.19.9",
+    "@studio-os/agent": "*",
+    "@studio-os/core": "*",
+    "@studio-os/module-compliance": "*",
+    "@studio-os/module-github": "*",
+    "@studio-os/module-money": "*",
+    "@studio-os/module-people": "*",
+    "@studio-os/module-projects": "*",
+    "@studio-os/module-sales": "*",
+    "hono": "4.13.13",
+    "postgres": "3.4.9",
+    "tsx": "4.23.15"
+  },
+  "devDependencies": {
+    "@studio-os/testing": "*"
+  }
+}

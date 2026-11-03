@@ -71,6 +71,7 @@ export default defineModule({
             label: 'Staff member',
             plural: 'Staff',
             statuses: ['Active', 'Left'],
+            employeeEditable: false,
             fields: [
                 { key: 'user', label: 'Login', kind: 'user', required: true },
                 { key: 'jobTitle', label: 'Job title', kind: 'text' },
@@ -91,6 +92,7 @@ export default defineModule({
             visibility: 'assigned',
             assigneeField: 'user',
             statuses: ['Suggested', 'Logged', 'Approved'],
+            managerStatuses: ['Approved'],
             fields: [
                 { key: 'user', label: 'Person', kind: 'user', required: true },
                 { key: 'date', label: 'Date', kind: 'date', required: true },
@@ -109,6 +111,7 @@ export default defineModule({
             visibility: 'assigned',
             assigneeField: 'user',
             statuses: ['Requested', 'Approved', 'Declined', 'Cancelled'],
+            managerStatuses: ['Approved', 'Declined'],
             fields: [
                 { key: 'user', label: 'Person', kind: 'user', required: true },
                 { key: 'kind', label: 'Kind', kind: 'select', options: ['Annual', 'Sick', 'Family responsibility', 'Unpaid'], required: true },
@@ -125,6 +128,7 @@ export default defineModule({
             visibility: 'assigned',
             assigneeField: 'user',
             statuses: ['Draft', 'Issued'],
+            employeeEditable: false,
             fields: [
                 { key: 'user', label: 'Person', kind: 'user', required: true },
                 { key: 'month', label: 'Month', kind: 'text', required: true },

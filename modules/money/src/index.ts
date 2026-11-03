@@ -9,9 +9,9 @@ import
     type StoredRecord,
     type TileData,
 } from '@studio-os/core'
-import { parseBankCsv } from './bank-csv.ts'
+import { parseBankCsv, type BankLine } from './bank-csv.ts'
 
-export { parseBankCsv, type BankLine } from './bank-csv.ts'
+export { parseBankCsv, withFingerprints, type BankLine } from './bank-csv.ts'
 
 const OPEN_INVOICE = ['Sent', 'Part paid']
 
@@ -87,6 +87,34 @@ async function recordPayment(ctx: Ctx, invoiceId: string, amountCents: number, d
     const status = paid >= Number(inv.data.amount ?? 0) ? 'Paid' : 'Part paid'
     await ctx.records.update(inv.id, { status, data: { paid } })
     return payment
+}
+
+/** Adds parsed bank lines, skipping any already imported (by fingerprint). */
+export async function importBankLines(ctx: Ctx, lines: readonly BankLine[], account: string): Promise<{ added: number; skipped: number }>
+{
+    let added = 0
+    let skipped = 0
+    for (const line of lines) {
+        const seen = await ctx.records.list('bank_line', { where: { fingerprint: line.fingerprint }, limit: 1 })
+        if (seen.length > 0) {
+            skipped++
+            continue
+        }
+        await ctx.records.create({
+            type: 'bank_line',
+            title: line.description || '(no description)',
+            data: {
+                date: line.date,
+                amount: line.amount,
+                ...(line.balance === null ? {} : { balance: line.balance }),
+                account,
+                ...(line.reference ? { reference: line.reference } : {}),
+                fingerprint: line.fingerprint,
+            },
+        })
+        added++
+    }
+    return { added, skipped }
 }
 
 async function clientEmail(ctx: Ctx, inv: StoredRecord): Promise<{ name: string; email: string | null }>
@@ -178,6 +206,7 @@ export default defineModule({
             visibility: 'assigned',
             assigneeField: 'claimant',
             statuses: ['Submitted', 'Approved', 'Rejected', 'Reimbursed'],
+            managerStatuses: ['Approved', 'Rejected', 'Reimbursed'],
             fields: [
                 { key: 'claimant', label: 'Claimed by', kind: 'user' },
                 { key: 'amount', label: 'Amount', kind: 'money', required: true },
@@ -363,31 +392,7 @@ export default defineModule({
                 account: { type: 'string', description: 'Account name, e.g. "FNB cheque"' },
             },
             async run(ctx, p) {
-                const lines = parseBankCsv(String(p.csv))
-                const account = p.account ? String(p.account) : 'Main account'
-                let added = 0
-                let skipped = 0
-                for (const line of lines) {
-                    const seen = await ctx.records.list('bank_line', { where: { fingerprint: line.fingerprint }, limit: 1 })
-                    if (seen.length > 0) {
-                        skipped++
-                        continue
-                    }
-                    await ctx.records.create({
-                        type: 'bank_line',
-                        title: line.description || '(no description)',
-                        data: {
-                            date: line.date,
-                            amount: line.amount,
-                            ...(line.balance === null ? {} : { balance: line.balance }),
-                            account,
-                            ...(line.reference ? { reference: line.reference } : {}),
-                            fingerprint: line.fingerprint,
-                        },
-                    })
-                    added++
-                }
-                return { added, skipped }
+                return importBankLines(ctx, parseBankCsv(String(p.csv)), p.account ? String(p.account) : 'Main account')
             },
         },
         {
