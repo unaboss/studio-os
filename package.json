@@ -16,7 +16,9 @@
     "dev:web": "npm run dev -w apps/web",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "seed": "npm run seed -w apps/api"
+    "seed": "npm run seed -w apps/api",
+    "admin": "npm run admin -w apps/api --",
+    "start": "npm start -w apps/api"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.3.16",

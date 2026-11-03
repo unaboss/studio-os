@@ -1,0 +1,59 @@
+name: Test and deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  deploy:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to the Vultr VM
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VULTR_INFERENCE_API_KEY: ${{ secrets.VULTR_INFERENCE_API_KEY }}
+          VULTR_INFERENCE_MODEL: ${{ vars.VULTR_INFERENCE_MODEL }}
+          STUDIO_DOMAIN: ${{ vars.STUDIO_DOMAIN }}
+          GITHUB_TOKEN_FOR_SYNC: ${{ secrets.STUDIO_GITHUB_TOKEN }}
+          GITHUB_WEBHOOK_SECRET: ${{ secrets.STUDIO_GITHUB_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "$VM_HOST" ] || [ -z "$VM_SSH_KEY" ]; then
+            echo "VM_HOST or VM_SSH_KEY is not set, so there is nowhere to deploy yet."
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -T 15 -H "$VM_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          SSH="ssh -i ~/.ssh/deploy_key -o BatchMode=yes root@$VM_HOST"
+          {
+            printf 'VULTR_INFERENCE_API_KEY=%s\n' "$VULTR_INFERENCE_API_KEY"
+            printf 'VULTR_INFERENCE_MODEL=%s\n' "$VULTR_INFERENCE_MODEL"
+            printf 'STUDIO_DOMAIN=%s\n' "$STUDIO_DOMAIN"
+            printf 'GITHUB_TOKEN=%s\n' "$GITHUB_TOKEN_FOR_SYNC"
+            printf 'GITHUB_WEBHOOK_SECRET=%s\n' "$GITHUB_WEBHOOK_SECRET"
+          } | $SSH "umask 077 && cat > /root/studio-os.env.ci"
+          $SSH "REPO=https://github.com/${{ github.repository }}.git bash -s" < deploy/remote.sh

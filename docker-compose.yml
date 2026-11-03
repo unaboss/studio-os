@@ -1,0 +1,77 @@
+# Studio OS on one Vultr Cloud Compute VM.
+#
+#   caddy    HTTPS for your domain (or plain HTTP on the IP until DNS is set)
+#   app      API, web app and the agent's daily scheduler
+#   db       Postgres, on a volume on the VM's own disk
+#   sandbox  runs code the agent writes: no network, read-only, tight limits
+#
+# Secrets live in .env next to this file (see .env.example). deploy/remote.sh
+# creates it on the VM and GitHub Actions fills in the Vultr key.
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: studio
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio -d studio"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://studio:${POSTGRES_PASSWORD}@db:5432/studio
+      SANDBOX_DIR: /jobs
+      PORT: "3000"
+    volumes:
+      - jobs:/jobs
+    depends_on:
+      db:
+        condition: service_healthy
+
+  sandbox:
+    build: apps/sandbox
+    restart: unless-stopped
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 64
+    tmpfs: [/tmp]
+    environment:
+      JOBS_DIR: /jobs
+      JOB_TIMEOUT_MS: "5000"
+    volumes:
+      - jobs:/jobs
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # Your domain gets HTTPS; without one, plain HTTP on port 80.
+      STUDIO_DOMAIN: ${STUDIO_DOMAIN:-:80}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+
+volumes:
+  pgdata:
+  jobs:
+  caddy_data:
+  caddy_config:

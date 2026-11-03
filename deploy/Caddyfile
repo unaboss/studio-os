@@ -1,0 +1,14 @@
+# STUDIO_DOMAIN comes from docker-compose.yml: your domain, which gets a
+# certificate and HTTPS once its DNS points here, or ":80" for plain HTTP
+# on the VM's IP until then.
+{$STUDIO_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "DENY"
+		-Server
+	}
+	reverse_proxy app:3000
+}
