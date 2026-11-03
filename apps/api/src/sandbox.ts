@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 export interface Sandbox
@@ -13,8 +13,11 @@ export interface Sandbox
  */
 export function folderSandbox(dir: string, timeoutMs = 15_000): Sandbox
 {
+    let ready: Promise<unknown> | null = null
     return {
         async run(code, input) {
+            ready ??= Promise.all(['in', 'work', 'out'].map((d) => mkdir(join(dir, d), { recursive: true })))
+            await ready
             const id = randomUUID()
             const tmp = join(dir, 'in', `${id}.tmp`)
             await writeFile(tmp, JSON.stringify({ code, input }))

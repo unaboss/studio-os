@@ -6,6 +6,7 @@ import
     ConfigError,
     createContext,
     ForbiddenError,
+    formatMoney as money,
     newId,
     NotFoundError,
     slug,
@@ -304,7 +305,19 @@ export function createApp(opts: AppOptions): Hono<Env>
              where a.company_id = $1 and a.status = $2 order by a.created_at desc limit 100`,
             [ctx.companyId, status],
         )
-        return c.json({ approvals: rows })
+        // Say which invoice or claim each approval is about, not just its id.
+        const approvals = []
+        for (const row of rows as { params: Record<string, unknown> | string }[]) {
+            const params = typeof row.params === 'string' ? JSON.parse(row.params) : row.params
+            const refs: Record<string, { id: string; title: string; type: string }> = {}
+            for (const [k, v] of Object.entries(params ?? {})) {
+                if (!k.endsWith('Id') || typeof v !== 'string') continue
+                const rec = await ctx.records.getRaw(v).catch(() => null)
+                if (rec) refs[k] = { id: rec.id, title: rec.type === 'invoice' ? `${rec.title} · ${money(Number(rec.data.amount) - Number(rec.data.paid ?? 0))} due ${rec.data.due ?? ''}` : rec.title, type: rec.type }
+            }
+            approvals.push({ ...row, params, refs })
+        }
+        return c.json({ approvals })
     })
 
     app.post('/api/approvals/:id', async (c) => {

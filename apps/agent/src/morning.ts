@@ -130,7 +130,7 @@ export function plainBrief(f: Facts): string
 {
     const lines: string[] = []
     const cash = f.tiles['Cash in the bank']
-    if (cash?.value) lines.push(`Cash is ${cash.value} (${cash.caption}).`)
+    if (cash?.value && cash.value !== '—') lines.push(`Cash is ${cash.value} (${cash.caption}).`)
     if (f.overdue.length) {
         const worst = [...f.overdue].sort((a, b) => b.daysLate - a.daysLate)[0]!
         lines.push(`${f.overdue.length} invoice${f.overdue.length === 1 ? ' is' : 's are'} overdue; the oldest is ${worst.number} from ${worst.client}, ${worst.daysLate} days late.`)
@@ -139,7 +139,7 @@ export function plainBrief(f: Facts): string
     const soon = f.deadlines.filter((d) => d.status === 'Overdue' || daysBetween(d.due, new Date(`${f.today}T12:00:00Z`)) >= -7)
     if (soon.length) lines.push(`Deadlines: ${soon.map((d) => `${d.title} (${d.status === 'Overdue' ? 'overdue' : `due ${d.due}`})`).join('; ')}.`)
     if (f.followUps.length) lines.push(`Follow up today with ${f.followUps.map((l) => l.lead).join(', ')}.`)
-    if (f.suggestedTime) lines.push(`${f.suggestedTime} time entries suggested from GitHub are waiting to be confirmed.`)
+    if (f.suggestedTime) lines.push(f.suggestedTime === 1 ? 'One time entry suggested from GitHub is waiting to be confirmed.' : `${f.suggestedTime} time entries suggested from GitHub are waiting to be confirmed.`)
     return lines.join(' ')
 }
 

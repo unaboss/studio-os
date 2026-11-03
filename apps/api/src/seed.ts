@@ -209,6 +209,20 @@ export async function seedDemo(db: Db, opts: { reset?: boolean; now?: Date } = {
         )
     }
 
+    // A week of shipping, as the GitHub webhook would have recorded it.
+    const shipped = [
+        { name: 'github.pr_merged', project: ordering.projectId, repo: 'demo-studio/karoo-ordering', payload: { number: 18, title: 'Menu screen with live stock', author: 'lerato-demo' } },
+        { name: 'github.pr_merged', project: booking.projectId, repo: 'demo-studio/tidepool-booking', payload: { number: 7, title: 'Course calendar', author: 'lerato-demo' } },
+        { name: 'github.checks_failed', project: booking.projectId, repo: 'demo-studio/tidepool-booking', payload: { name: 'CI', branch: 'deposit-payments' } },
+        { name: 'github.pr_merged', project: portal.projectId, repo: 'demo-studio/marula-portal', payload: { number: 2, title: 'Project skeleton and POPIA notes', author: 'thabo-demo' } },
+    ]
+    for (const e of shipped) {
+        await sys.events.emit(e.name, {
+            recordId: String(e.project),
+            payload: { repo: e.repo, projectId: String(e.project), url: `https://github.com/${e.repo}`, ...e.payload },
+        })
+    }
+
     await runMorning(as(AGENT), null)
 }
 

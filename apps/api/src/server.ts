@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import postgres from 'postgres'
-import { postgresJsDb, type Db } from '@studio-os/core'
+import { pgliteDb, postgresJsDb, type Db } from '@studio-os/core'
 import { listModels, vultrInference, type Inference } from '@studio-os/agent'
 import { createApp } from './app.ts'
 import { folderSandbox } from './sandbox.ts'
@@ -17,6 +17,15 @@ export async function connect(): Promise<{ db: Db; close: () => Promise<void> }>
 {
     const url = env.DATABASE_URL
     if (!url) throw new Error('Set DATABASE_URL, e.g. postgres://studio:secret@localhost:5432/studio')
+    if (url.startsWith('pglite:')) {
+        // Postgres in-process, for trying Studio OS without a database server.
+        const { PGlite } = await import('@electric-sql/pglite')
+        const path = url.slice('pglite:'.length)
+        const pg = path ? new PGlite(path) : new PGlite()
+        const db = pgliteDb(pg)
+        await migrateAll(db)
+        return { db, close: () => pg.close() }
+    }
     const sql = postgres(url, { max: 10, onnotice: () => {} })
     const db = postgresJsDb(sql as never)
     await migrateAll(db)
