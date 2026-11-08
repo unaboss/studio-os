@@ -1,102 +1,71 @@
 # Studio OS
 
-**The back office for small software studios.** Projects, money, people and GitHub in one system, with two sides: a manager side for running the business and a phone-first employee side for doing the work. A back-office agent does the morning rounds on Vultr Serverless Inference and asks before anything leaves the building.
+**A code CRM for software studios.** Every client project is a living tree. Main is the trunk, branches grow off it, and merged work grafts back in. Tap any commit to see what changed and the code exactly as it was then. An agent on Vultr Serverless Inference explains a commit or a whole branch in plain words, and the People page shows what everyone is building right now.
 
-Built for studios of two to twenty people, where the founder is also the developer, the bookkeeper and the account manager. It started as the system [North Tech Africa](https://northtech.africa) needed for itself.
+It started as the system [North Tech Africa](https://northtech.africa), a two-person studio, wanted for itself: one place that answers "what is happening in each client's code, and who is on it?" without opening five GitHub tabs.
 
-> **Try the demo:** sign in as the manager or the employee from the buttons on the sign-in page. Everything in the demo studio is made up.
+> **Try the demo:** sign in as the manager or the developer from the buttons on the sign-in page. The demo studio, its clients and its three repositories are made up.
 
 ---
 
-## What it does
+## Four screens
 
-**The manager side** opens on *Today*:
+**Tree** (home)
+- A **project switcher** across the top. Each project shows its client and a **health dot** that comes from the code alone: red when checks are failing, amber when a branch has had no commits for 10 days, a review is waiting, or an active project has gone quiet for 14 days. The reasons sit right under the switcher.
+- The **tree** itself. Open branches have fresh leaves and a name tag at their tip. Merged branches, even ones deleted on GitHub, are rebuilt from their merge commits (`fix/stock-sync · #19`).
+- A **commit panel**. *Changes* shows the files and the diff. *Code at this point* lets you browse every file in the repo as it was at that commit. *Explain this commit* and *Explain the whole branch* ask the agent for a summary and what a reviewer should check.
+- **Contributors** along the bottom. Tap a person and the tree dims everything except their work.
 
-- a **morning brief** the agent wrote at six: cash, what is overdue, deadlines, who to follow up;
-- **Waiting for you**: invoices to send and payment reminders the agent or your rules prepared. Nothing that sends money or messages outside the studio happens without a click here;
-- **tiles** for cash in the bank, money owed, this month, runway, project health, SARS and CIPC deadlines, the sales pipeline, team hours, shipping on GitHub and payroll.
+**Projects**: every project grouped by client, with its health dot, open branches, last commit and the reasons it needs a look. Each one opens its tree, or its page with phases and the task board kept in step with GitHub issues.
 
-Behind it: projects on a **phase and payment plan** (finish *Discovery* and its 40% invoice drafts itself), a task board, invoices and the **bank feed** (FNB, Absa, Nedbank, Capitec and Standard Bank CSVs; Studio OS matches payments to invoices), expense claims, leave, payroll with SARS PAYE and UIF, leads, compliance deadlines, automations and settings.
+**People**: one card per person with their commits in the last 14 days, the branches they have open across every project, the reviews waiting on them, and their recent commits. Every branch and commit links straight to that spot on the tree.
 
-**The employee side** is built for a phone: *My day*, my tasks, **time suggested from my GitHub commits** to confirm, expense claims, leave, and payslips. Employees never see salaries, rates, project values or anyone else's claims.
-
-**GitHub, both ways:**
-
-| In GitHub | In Studio OS |
-|---|---|
-| Milestone | Phase. Closing the milestone finishes the phase and drafts its invoice |
-| Issue | Task, assigned by GitHub login |
-| Pull request mentioning `#12` | Task 12 moves to *In review*; merged with `Closes #12`, it is *Done* |
-| Review requested | Shows on the reviewer's *My day* |
-| Commits | Suggested time for that person and project, to confirm |
-| Failed checks, merges, releases | The *Shipping* tile |
-
-Going the other way, a task created in Studio OS opens an issue, a phase opens a milestone, and finishing either closes it on GitHub.
-
-## Made to be reshaped
-
-Every studio bills, names things and works differently, so Studio OS keeps those differences in data rather than code. All of this is in **Settings**, with no redeploy:
-
-- **Modules** switch on and off: Projects (always on), Money, People, Sales, Compliance, GitHub. Each module declares its record types, events, actions and tiles in one manifest ([modules/money/src/index.ts](modules/money/src/index.ts)).
-- **Custom fields** on any record type (a VAT number on clients, a cost centre on projects). Forms, detail pages and validation pick them up.
-- **Statuses** can be renamed or extended per record type.
-- **Project types** set the phases and how the project value is split across them: 40/30/30, 50/50, retainer or hourly.
-- **Screens**: the order of tiles on each side, and which to show.
-- **Automations**: *when* an event happens, *if* conditions hold, *then* run an action, with values from the event (`{{payload.invoiceId}}`). Rules that would send money or messages always queue for approval.
-- **Brand**: the company's name and colour run through every screen and email.
-
-Because the UI, automations and the agent all call the same named **actions**, a new module's actions appear on record pages, in the rule builder and in the agent's toolbox at once.
+**Settings**: the company name and colour, the team and their GitHub logins (so commits match people), and the GitHub and Vultr connections.
 
 ## How it uses Vultr
 
 ```mermaid
 flowchart LR
-    subgraph VM["Vultr Cloud Compute VM (Johannesburg)"]
+    subgraph VM["Vultr Cloud Compute VM"]
         caddy["Caddy<br/>HTTPS"] --> app
         subgraph app["app container"]
             api["API + web app"]
-            sched["Scheduler<br/>06:00 morning run"]
-            agent["Back-office agent"]
+            tree["Code tree<br/>bare, blob-less clones<br/>fetched every 5 min"]
+            agent["Agent"]
         end
         app --> db[("Postgres<br/>on the VM disk")]
-        app <-->|"job files<br/>(shared volume)"| sandbox["sandbox container<br/>no network, read-only,<br/>256 MB, Node permission model"]
+        tree --> disk[("/data/code<br/>repos on the VM disk")]
     end
     agent -->|"OpenAI-compatible<br/>chat completions"| inference["Vultr Serverless Inference"]
-    github["GitHub"] -->|"signed webhooks"| caddy
-    app -->|"issues, milestones"| github
-    browser["Manager and staff<br/>browsers and phones"] --> caddy
+    github["GitHub"] -->|"signed webhooks:<br/>checks, PRs, reviews"| caddy
+    tree -->|"git fetch"| github
+    browser["The team's<br/>browsers"] --> caddy
 ```
 
-- **Vultr Cloud Compute** runs the whole system with Docker Compose. It needs a machine, not functions: the agent's scheduler is always on, Postgres keeps the studio's financial records on the VM's own disk, and the sandbox is a separate container with **no network interface at all**.
-- **Vultr Serverless Inference** is the agent's model. Each morning it reads the facts the system gathered (never the raw database) and returns a brief plus proposed actions as JSON. Proposals are checked against an allow-list, deduplicated and queued for approval. The agent can draft a reminder; it cannot send one.
-- **Code the agent writes runs in the sandbox.** When a bank exports a statement format Studio OS has never seen, the agent writes a small parser. That code runs in the sandbox container, in a Node process started with `--permission` (no file access beyond its own job, no child processes, no workers), with a 5 second limit. Its output is validated, the manager sees a preview, and only then is anything imported. The parser is kept for the next statement in that format.
-
-Without an inference key the agent still runs and writes a plain brief from the same facts, so the system never depends on the model being up.
+- **Vultr Cloud Compute is where the code lives.** Each linked repository is kept on the VM's own disk as a bare, blob-less clone (history first, file contents fetched the first time someone opens them). The server fetches every repo every five minutes, so the tree is always current and walking back through old code never waits on GitHub or hits its API rate limits. This is why it needs a machine and not functions: an always-on process, a persistent disk and `git` itself.
+- **Vultr Serverless Inference is the agent.** When someone asks it to explain a commit or a branch, the server gathers the facts (authors, the commits, files changed, and the diff trimmed to fit) and asks the model for a short summary and a list of things a reviewer should check, as JSON. Answers are cached per commit. Without a key, the agent still answers from the same facts in plain words: who changed what, which areas, whether payment or auth code was touched, and whether tests came with it.
+- **Postgres on the VM** holds the people, projects and GitHub events (checks, pull requests, review requests) that feed the health dots.
 
 ## Architecture
 
 ```
-packages/core        records, events, actions, approvals, automations, registry
-packages/testing     in-memory Postgres (PGlite) studio for tests
-modules/*            projects, money, people, sales, compliance, github
-apps/api             Hono API, sessions, GitHub webhook, scheduler, seed data
-apps/agent           morning run, Vultr inference client, statement parser writer
-apps/sandbox         the runner for untrusted code
-apps/web             React app: /manage and /me
-deploy/              Caddyfile and the VM deploy script
+apps/api/src/codetree.ts      the repos on disk: graph, commit, files, file at a commit, range
+apps/api/src/codeinsights.ts  health per project and work per person, from the code
+apps/agent/src/explain.ts     the agent's commit and branch explanations
+apps/web/src/pages/CodeTree.tsx   the tree: layout, drawing, commit panel, contributors
+apps/api                      Hono API, sessions, GitHub webhook, demo data
+packages/core                 records, events, actions, registry
+modules/*                     projects and GitHub sync (and older back-office modules, switched off in the UI)
+deploy/                       Caddyfile and the VM deploy script
 ```
 
-The core idea: **everything is a typed record, every change is an event, everything the system can do is an action.**
+**How the tree is grown.** The server returns branches and up to 400 commits with their parents. The browser takes the default branch's first-parent chain as the trunk, walks each open branch back until it meets a commit the tree already owns, and rebuilds merged-and-deleted branches from the second parent of each merge commit. Branches are given lanes left and right of the trunk so overlapping ones never cross, and the whole thing is drawn as SVG: tapering bark, leaves on open work, knots on the trunk, roots in the soil, a date gutter on the left.
 
-- A **record** has a type, a status, a parent (task → project → client) and validated data. Visibility is per type (`everyone`, `managers`, or `assigned` through a user field), and sensitive fields are stripped for employees on the server.
-- **Events** (`invoice.overdue`, `task.done`, `github.pr_merged`) are stored as the audit trail, then handed to module listeners and to the company's automation rules.
-- **Actions** declare their parameters and whether they `needsApproval`. A manager clicking a button runs it; a rule or the agent asking for it queues it.
-
-Money is always whole cents. South African PAYE uses SARS's tables for the 2027 tax year, kept as data in [modules/people/src/payroll.ts](modules/people/src/payroll.ts); payslips stay drafts until a manager issues them.
+**Safety.** Only repositories linked to a project can be read. Commit ids, repo names and file paths are validated before they reach `git` (no `..`, no leading `-`, no refs like `HEAD`), files are capped at 200 kB and diffs at 120 kB, and `git` runs with no prompts and a timeout. A private repo needs a token on the server, which never reaches the browser.
 
 ## Run it locally
 
-Needs Node 22.
+Needs Node 22 and git.
 
 ```bash
 npm install
@@ -106,9 +75,9 @@ DATABASE_URL=pglite: SESSION_SECRET=$(openssl rand -hex 32) \
 # open http://localhost:3000
 ```
 
-`DATABASE_URL=pglite:` runs Postgres in-process, so there is nothing else to install. For development, `npm run dev:api` and `npm run dev:web` (Vite on :5173, proxying the API).
+`SEED_DEMO=1` builds the three demo repositories with real git history (dated relative to today) and links them to the demo projects. `DATABASE_URL=pglite:` runs Postgres in-process, so there is nothing else to install.
 
-Tests run against a real Postgres engine in memory:
+Tests run against a real Postgres engine in memory and real git repos:
 
 ```bash
 npm run typecheck && npm test
@@ -117,8 +86,8 @@ npm run typecheck && npm test
 ## Deploy to a Vultr VM
 
 1. Create a **Cloud Compute** instance (Ubuntu 24.04, 2 vCPU / 4 GB is plenty) with your SSH key, and open ports 22, 80 and 443.
-2. In the GitHub repo, add the secrets `VM_HOST` (the VM's IP), `VM_SSH_KEY` (the private key) and `VULTR_INFERENCE_API_KEY`. Optionally add the variables `STUDIO_DOMAIN` (for HTTPS) and `VULTR_INFERENCE_MODEL`, and the secrets `STUDIO_GITHUB_TOKEN` and `STUDIO_GITHUB_WEBHOOK_SECRET` for GitHub sync.
-3. Push to `main`. [The workflow](.github/workflows/deploy.yml) tests, then runs [deploy/remote.sh](deploy/remote.sh) on the VM over SSH: it installs Docker the first time, generates the database password and session secret once, and runs `docker compose up`.
+2. In the GitHub repo, add the secrets `VM_HOST` (the VM's IP), `VM_SSH_KEY` (the private key) and `VULTR_INFERENCE_API_KEY`. Optionally add the variables `STUDIO_DOMAIN` (for HTTPS) and `VULTR_INFERENCE_MODEL`, and the secrets `STUDIO_GITHUB_TOKEN` (for private repos) and `STUDIO_GITHUB_WEBHOOK_SECRET`.
+3. Push to `main`. [The workflow](.github/workflows/deploy.yml) tests, then runs [deploy/remote.sh](deploy/remote.sh) on the VM over SSH: it installs Docker the first time, generates the database password and session secret once, and runs `docker compose up`. Repos are kept in the `code` volume.
 
 Point a DNS A record at the VM and set `STUDIO_DOMAIN`; Caddy gets the certificate. To start your own company alongside the demo:
 
@@ -126,15 +95,13 @@ Point a DNS A record at the VM and set `STUDIO_DOMAIN`; Caddy gets the certifica
 docker compose exec app npm run admin -- create-company "Your Studio" you@studio.co.za "Your Name" 'a long password'
 ```
 
-For GitHub sync, give each repo a webhook to `https://<your domain>/api/github/webhook?company=<company id>` with your webhook secret, and link the repo on its project.
+Then link each project to its repo (`owner/name`) and its tree appears. For checks, pull requests and reviews, give each repo a webhook to `https://<your domain>/api/github/webhook?company=<company id>` with your webhook secret.
 
 ## Security notes
 
 - Sessions are signed, HTTP-only, `SameSite=Lax` cookies; changes must be JSON, which blocks cross-site form posts. Sign-in is rate limited.
-- Employees cannot see managers-only records, cannot read sensitive fields, cannot approve their own claims or leave, and cannot create records for someone else.
 - GitHub webhooks are checked against `X-Hub-Signature-256`.
-- To watch the sandbox refuse network, file reads, child processes and endless loops on a running VM: `docker compose exec app node_modules/.bin/tsx apps/api/src/sandbox-check.ts`.
-- Secrets live only in GitHub secrets and the VM's `.env` (mode 600). The demo sends no email; messages land in the Activity outbox.
+- Secrets live only in GitHub secrets and the VM's `.env` (mode 600).
 
 ## License
 
