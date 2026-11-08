@@ -4,25 +4,25 @@
 
 It started as the system [North Tech Africa](https://northtech.africa), a two-person studio, wanted for itself: one place that answers "what is happening in each client's code, and who is on it?" without opening five GitHub tabs.
 
-> **Try the demo:** sign in as the manager or the developer from the buttons on the sign-in page. The demo studio, its clients and its three repositories are made up.
+> **Try the demo:** sign in as the manager or the developer from the buttons on the sign-in page. The demo studio, its clients and its three repositories are made up. The demo accounts are shared, so they can look around, ask the agent and plant a few repos but not change settings; start your own space to try everything.
 
 ---
 
 ## What you see
 
 **Tree** (home)
-- A **project switcher** across the top. Each project shows its client and a **health dot** that comes from the code alone: red when checks are failing, amber when a branch has had no commits for 10 days, a review is waiting, or an active project has gone quiet for 14 days. The reasons sit right under the switcher.
-- The **tree** itself. Open branches have fresh leaves and a name tag at their tip. Merged branches, even ones deleted on GitHub, are rebuilt from their merge commits (`fix/stock-sync · #19`).
-- A **commit panel**. *Changes* shows the files and the diff. *Code at this point* lets you browse every file in the repo as it was at that commit. *Explain this commit* and *Explain the whole branch* ask the agent for a summary and what a reviewer should check, and *Ask the agent* takes any question about the code at that commit ("where is the deposit taken?", "is this safe to ship?").
-- **Contributors** along the bottom. Tap a person and the tree dims everything except their work.
+- The **tree** fills the screen, drawn as line work in the accent colour. Main is the trunk; each branch is a labelled card, and every commit is its author's face with its subject beside it. Merged branches, even ones deleted on GitHub, are rebuilt from their merge commits. *Replay* grows the whole tree commit by commit.
+- A **project switcher** across the top. Each project has a **health dot** that comes from the code alone: red when checks are failing, amber when a branch has had no commits for 10 days, a review is waiting, or an active project has gone quiet for 14 days.
+- A **side panel** that is always there. With nothing picked, it says in plain words what changed this week and why the project needs a look. Pick a commit or branch and it shows who made it, what changed in plain words, *Code at this point* (the diff and every file in the repo as it was), *Explain branch*, and **Ask the agent**, which takes any question about the code at that commit ("anything risky here?", "where is the deposit taken?").
+- **Contributors** at the bottom of the panel. Tap a person and the tree lights up only their work.
 
 **View**: any commit or branch of a website opens the site itself, exactly as it was at that commit, served by the VM straight from git. Play a branch and watch the site grow commit by commit: in the demo, Tidepool's booking site goes from a bare skeleton to hero, dive calendar, course cards and the deposit form.
 
-**Plant a repo**: paste any GitHub repo (`owner/name` or its link) and its tree grows in seconds. Anyone can sign up for their own space, so it works the same for a solo developer as for a team.
+**Plant a repo**: type a GitHub username to pick from its public repos, or paste any `owner/name`, and its tree grows in seconds. Anyone can start their own space from the sign-in page, so it works the same for a solo developer as for a team.
 
 **Projects**: every project grouped by client, with its health dot, open branches, last commit and the reasons it needs a look. Each one opens its tree, or its page with phases and the task board kept in step with GitHub issues.
 
-**People**: one card per person with their commits in the last 14 days, the branches they have open across every project, the reviews waiting on them, and their recent commits. Every branch and commit links straight to that spot on the tree.
+**People**: a profile for each person, like a GitHub profile: a contribution graph of the last six months, what they are working on now across every project, the reviews waiting on them, and their recent commits. Every branch and commit links straight to that spot on the tree.
 
 **Settings**: the company name and colour, the team and their GitHub logins (so commits match people), and the GitHub and Vultr connections.
 
@@ -109,6 +109,7 @@ Then link each project to its repo (`owner/name`) and its tree appears. For chec
 
 ## Security notes
 
+- On a public demo (`DEMO=1`) the shared demo accounts are read-only apart from asking the agent and planting up to 8 repos; `DEMO_UNLOCKED=1` turns that off.
 - Sessions are signed, HTTP-only, `SameSite=Lax` cookies; changes must be JSON, which blocks cross-site form posts. Sign-in is rate limited.
 - GitHub webhooks are checked against `X-Hub-Signature-256`.
 - Secrets live only in GitHub secrets and the VM's `.env` (mode 600).
