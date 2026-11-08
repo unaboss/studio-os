@@ -12,11 +12,9 @@ export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slic
 /** Kept for older callers: a steady colour per person. */
 export const colour = (key: string) => `oklch(0.55 0.11 ${hueOf(key)})`
 
-/** A 5x5 mirrored grid, like GitHub's default avatars. */
-function Identicon({ seed, size }: { seed: string; size: number })
+function cellsOf(seed: string): [number, number][]
 {
     const h = hash(seed)
-    const hue = hueOf(seed)
     const cells: [number, number][] = []
     for (let i = 0; i < 15; i++) {
         if ((h >>> i) & 1 || (hash(seed + i) & 3) === 0) {
@@ -26,11 +24,33 @@ function Identicon({ seed, size }: { seed: string; size: number })
             if (col < 2) cells.push([4 - col, row])
         }
     }
+    return cells
+}
+
+/** A 5x5 mirrored grid, like GitHub's default avatars. */
+function Identicon({ seed, size, x, y }: { seed: string; size: number; x?: number; y?: number })
+{
     return (
-        <svg viewBox="-1.4 -1.4 7.8 7.8" width={size} height={size} aria-hidden="true" className="identicon" style={{ ['--hue' as string]: hue }}>
+        <svg viewBox="-1.4 -1.4 7.8 7.8" x={x} y={y} width={size} height={size} aria-hidden="true" className="identicon" style={{ ['--hue' as string]: hueOf(seed) }}>
             <rect x={-1.4} y={-1.4} width={7.8} height={7.8} className="identicon-bg" />
-            {cells.map(([x, y]) => <rect key={`${x}${y}`} x={x} y={y} width={1.02} height={1.02} className="identicon-cell" />)}
+            {cellsOf(seed).map(([cx, cy]) => <rect key={`${cx}${cy}`} x={cx} y={cy} width={1.02} height={1.02} className="identicon-cell" />)}
         </svg>
+    )
+}
+
+/** A round face inside an SVG drawing, for the tree's commits and cards. */
+export function SvgFace({ id, x, y, r, name, email, github }: { id: string; x: number; y: number; r: number; name: string; email?: string; github?: string | null })
+{
+    const login = realLogin(github, email)
+    return (
+        <g aria-label={name}>
+            <clipPath id={id}><circle cx={x} cy={y} r={r} /></clipPath>
+            <g clipPath={`url(#${id})`}>
+                {login
+                    ? <image href={`https://github.com/${login}.png?size=64`} x={x - r} y={y - r} width={r * 2} height={r * 2} preserveAspectRatio="xMidYMid slice" />
+                    : <Identicon seed={(email || name).toLowerCase()} size={r * 2} x={x - r} y={y - r} />}
+            </g>
+        </g>
     )
 }
 
