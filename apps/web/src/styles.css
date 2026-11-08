@@ -906,3 +906,90 @@ ul.plain li > .small.faint:last-child { margin-left: auto; white-space: nowrap; 
 .panel-scroll { border-radius: 0; }
 .panel-toggle.on { color: var(--accent); background: var(--accent-soft); }
 @media (max-width: 760px) { .panel-collapse { left: auto; right: 12px; top: 10px; transform: rotate(90deg); } }
+
+/* ---- Shapes with meaning ---- */
+.t-ring { fill: var(--surface); stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.t-node.merged .t-ring { stroke: color-mix(in oklab, var(--accent) 38%, var(--bg)); }
+.t-node.fix .t-ring { stroke: var(--warning); }
+.t-node.diamond .t-ring { stroke-width: 2.4; }
+.t-node.square .t-ring { stroke-width: 2.4; }
+.t-pulse { fill: none; stroke: var(--accent); stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: t-pulse 2s ease-out infinite; }
+@keyframes t-pulse { 0% { opacity: .9; transform: scale(.8); } 100% { opacity: 0; transform: scale(1.9); } }
+.t-card.merged rect { stroke-dasharray: 4 3; }
+.t-card.fix .t-card-dot { fill: var(--warning); }
+.t-card.fix.open rect { stroke: color-mix(in oklab, var(--warning) 70%, var(--line)); }
+
+.tree-legend {
+    position: absolute; left: 20px; bottom: 18px; z-index: 18; font-size: 12px; color: var(--ink-2);
+    background: color-mix(in oklab, var(--surface) 88%, transparent); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 6px;
+}
+.tree-legend.open { padding: 10px 12px 10px 10px; }
+.tree-legend ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.tree-legend li { display: flex; align-items: center; gap: 8px; }
+.legend-toggle { border: 0; background: none; color: var(--ink-3); font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; cursor: pointer; padding: 2px 4px; }
+.legend-toggle:hover { color: var(--accent); }
+.lg-ring { fill: var(--surface); stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.lg-ring.fix { stroke: var(--warning); }
+.lg-pulse { fill: none; stroke: var(--accent); stroke-width: 1.5; opacity: .45; }
+.lg-card { fill: var(--surface); stroke: var(--accent); stroke-width: 1.5; }
+.lg-card.merged { stroke: color-mix(in oklab, var(--accent) 40%, var(--line)); stroke-dasharray: 3 2; }
+.lg-card.trunk { fill: var(--accent); }
+@media (max-width: 760px) { .tree-legend { display: none; } }
+@media (prefers-reduced-motion: reduce) { .t-pulse { animation: none; opacity: .4; } }
+
+/* =====================================================================
+   Calm palette: black and turquoise only. Status reads from words and
+   shape, not from extra colours.
+   ===================================================================== */
+:root, :root[data-theme='light'] {
+    --good: var(--accent); --good-soft: var(--accent-soft);
+    --warning: color-mix(in oklab, var(--accent) 70%, var(--ink)); --warning-soft: var(--surface-2);
+    --critical: var(--ink); --critical-soft: var(--surface-2);
+}
+:root[data-theme='dark'] {
+    --bg: #0b0d0d; --surface: #111414; --surface-2: #141818; --sunken: #090b0b;
+    --ink: #e8efee; --ink-2: #a9b7b5; --ink-3: #6f7f7d; --line: #1f2727; --line-strong: #2b3535;
+    --good: var(--accent); --good-soft: color-mix(in oklab, var(--accent) 16%, var(--surface));
+    --warning: color-mix(in oklab, var(--accent) 55%, var(--ink)); --warning-soft: var(--surface-2);
+    --critical: var(--ink); --critical-soft: var(--surface-2);
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+        --bg: #0b0d0d; --surface: #111414; --surface-2: #141818; --sunken: #090b0b;
+        --ink: #e8efee; --ink-2: #a9b7b5; --ink-3: #6f7f7d; --line: #1f2727; --line-strong: #2b3535;
+        --good: var(--accent); --warning: color-mix(in oklab, var(--accent) 55%, var(--ink)); --critical: var(--ink);
+        --good-soft: color-mix(in oklab, var(--accent) 16%, var(--surface)); --warning-soft: var(--surface-2); --critical-soft: var(--surface-2);
+    }
+}
+:root[data-theme='dark'] .tree-page, :root:not([data-theme='light']) .tree-page { --accent-strong: color-mix(in oklab, var(--accent) 80%, white); }
+/* Status dots: filled turquoise is fine, hollow is watch, ink ring needs attention. */
+.health.good { background: var(--accent); }
+.health.watch { background: transparent; box-shadow: inset 0 0 0 2px var(--accent); }
+.health.attention { background: var(--ink); }
+.panel-flag.attention, .panel-flag.watch { background: var(--surface-2); border: 1px solid var(--line-strong); }
+.person-badge { background: var(--accent-soft); color: var(--accent); }
+.error-box { background: var(--surface-2); color: var(--ink); border: 1px solid var(--line-strong); }
+/* Faces: every identicon in the one turquoise, the pattern tells people apart. */
+.identicon-bg { fill: color-mix(in oklab, var(--accent) 10%, var(--surface)) !important; }
+.identicon-cell { fill: var(--accent) !important; }
+/* Fixes are dashed, not coloured; the growing tip gets a still outer ring. */
+.t-node.fix .t-ring { stroke: var(--accent); stroke-dasharray: 3 2.2; }
+.t-card.fix .t-card-dot { fill: none; stroke: var(--accent); stroke-width: 1.4; }
+.t-card.fix.open rect { stroke: var(--accent); }
+.t-pulse { animation: none !important; opacity: .45; transform: none; stroke-width: 1.2; }
+.lg-ring.fix { stroke: var(--accent); stroke-dasharray: 3 2.2; }
+.lg-pulse { opacity: .45; stroke-width: 1.2; }
+/* Code: additions in turquoise, removals in muted ink. */
+.add-n { color: var(--accent); }
+.del-n { color: var(--ink-3); }
+.code-view.diff .add { background: color-mix(in oklab, var(--accent) 14%, transparent); }
+.code-view.diff .del { background: color-mix(in oklab, var(--ink) 7%, transparent); color: var(--ink-3); }
+.pill.good, .pill.accent { background: var(--accent-soft); color: var(--accent); }
+.pill.warning, .pill.critical { background: var(--surface-2); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line-strong); }
+.key.merged { background: color-mix(in oklab, var(--accent) 35%, var(--bg)); }
+.t-node.dim, .t-label.dim { opacity: .14; }
+/* The studio's accent, lifted a little on black so the turquoise reads clearly. */
+:root, :root[data-theme='light'] { --accent: var(--accent-base, #0f766e); }
+:root[data-theme='dark'] { --accent: color-mix(in oklab, var(--accent-base, #0f766e) 62%, #5eead4); --accent-ink: #041413; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --accent: color-mix(in oklab, var(--accent-base, #0f766e) 62%, #5eead4); --accent-ink: #041413; } }

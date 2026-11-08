@@ -38,13 +38,30 @@ function Identicon({ seed, size, x, y }: { seed: string; size: number; x?: numbe
     )
 }
 
-/** A round face inside an SVG drawing, for the tree's commits and cards. */
-export function SvgFace({ id, x, y, r, name, email, github }: { id: string; x: number; y: number; r: number; name: string; email?: string; github?: string | null })
+export type Shape = 'circle' | 'diamond' | 'square'
+
+/** The outline of a node shape centred on x,y, sized to look as big as a circle of radius r. */
+export function shapeD(shape: Shape, x: number, y: number, r: number): string
+{
+    if (shape === 'diamond') {
+        const R = r * 1.32
+        return `M${x},${y - R} L${x + R},${y} L${x},${y + R} L${x - R},${y} Z`
+    }
+    if (shape === 'square') {
+        const h = r * 0.92
+        const k = Math.min(3, h * 0.3)
+        return `M${x - h + k},${y - h} H${x + h - k} Q${x + h},${y - h} ${x + h},${y - h + k} V${y + h - k} Q${x + h},${y + h} ${x + h - k},${y + h} H${x - h + k} Q${x - h},${y + h} ${x - h},${y + h - k} V${y - h + k} Q${x - h},${y - h} ${x - h + k},${y - h} Z`
+    }
+    return `M${x - r},${y} a${r},${r} 0 1 0 ${r * 2},0 a${r},${r} 0 1 0 ${-r * 2},0 Z`
+}
+
+/** A face inside an SVG drawing, for the tree's commits and cards, cut to the commit's shape. */
+export function SvgFace({ id, x, y, r, name, email, github, shape = 'circle' }: { id: string; x: number; y: number; r: number; name: string; email?: string; github?: string | null; shape?: Shape })
 {
     const login = realLogin(github, email)
     return (
         <g aria-label={name}>
-            <clipPath id={id}><circle cx={x} cy={y} r={r} /></clipPath>
+            <clipPath id={id}><path d={shapeD(shape, x, y, r)} /></clipPath>
             <g clipPath={`url(#${id})`}>
                 {login
                     ? <image href={`https://github.com/${login}.png?size=64`} x={x - r} y={y - r} width={r * 2} height={r * 2} preserveAspectRatio="xMidYMid slice" />

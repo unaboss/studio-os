@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from 'react-dom'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ago, announceChange, api, useApi } from '../api.ts'
-import { Avatar, realLogin, SvgFace } from '../avatar.tsx'
+import { Avatar, realLogin, shapeD, SvgFace, type Shape } from '../avatar.tsx'
 import { Icon } from '../icons.tsx'
 import { Dialog, Pill, useStudio } from '../ui.tsx'
 
@@ -52,6 +52,7 @@ const human = (name: string) => {
     const words = name.replace(/^(feature|feat|fix|bugfix|hotfix|chore|refactor|release)\//i, '').replace(/[-_/.]+/g, ' ').trim()
     return words ? words[0]!.toUpperCase() + words.slice(1) : name
 }
+const isFix = (subject: string) => /^(fix|hotfix|bugfix)\b|^fix(\(.+\))?:/i.test(subject.trim())
 const kindOf = (name: string) => (/^(fix|bugfix|hotfix)\//i.test(name) ? 'fix' : /^(feature|feat)\//i.test(name) ? 'feature' : 'branch')
 const plain = (subject: string) => {
     const pr = /Merge pull request #(\d+) from [^/\s]+\/(\S+)/.exec(subject)
@@ -325,8 +326,8 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
     const trunk = limbs[0]!
     const trunkVisible = trunk.commits.filter(seen)
     const trunkPts: Pt[] = [[cx, groundY + 4], ...trunkVisible.map((s) => [at.get(s)!.x, at.get(s)!.y] as Pt)]
-    const trunkBase = Math.min(48, 26 + trunk.commits.length * 1.5)
-    const trunkW = (u: number) => 5 + (trunkBase - 5) * (1 - u) ** 0.85 + 14 * Math.max(0, 1 - u * 9) ** 2
+    const trunkBase = Math.min(76, 46 + trunk.commits.length * 2)
+    const trunkW = (u: number) => 14 + (trunkBase - 14) * (1 - u) ** 0.85 + 22 * Math.max(0, 1 - u * 9) ** 2
     const github = (email: string) => people.find((p) => p.email.toLowerCase() === email.toLowerCase())?.github ?? null
     const dateEvery = Math.max(1, Math.round(150 / ROW))
     const months = new Set<string>()
@@ -355,7 +356,7 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
             {/* Ground: one hairline and a few fine roots. */}
             <line x1={cx - 240} x2={cx + 240} y1={groundY + 2} y2={groundY + 2} stroke="url(#tree-ground)" strokeWidth={1} />
             {[-1, 1].map((d) => [0, 1].map((r) => (
-                <Wood key={`${d}${r}`} className="root" rings={false} geo={limbGeo([[cx + d * 4, groundY - 6], [cx + d * (34 + r * 36), groundY + 14 + r * 8]], (u) => (9 - r * 3.5) * (1 - u) + 1.2, false)} />
+                <Wood key={`${d}${r}`} className="root" rings={false} geo={limbGeo([[cx + d * 8, groundY - 8], [cx + d * (48 + r * 44), groundY + 16 + r * 9]], (u) => (14 - r * 5) * (1 - u) + 1.5, false)} />
             )))}
 
             {/* The crown, behind the wood: fuller over live work, faint over merged work. */}
@@ -394,12 +395,17 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
                 const p = at.get(sha)!
                 const c = bySha.get(sha)!
                 const kind = l.id === 0 ? 'trunk' : live(l) ? 'open' : 'merged'
+                // Shape says what kind of moment it was; colour says what kind of work.
+                const shape: Shape = c.parents.length > 1 ? 'diamond' : c.parents.length === 0 ? 'square' : 'circle'
+                const fix = isFix(c.subject) || (l.id !== 0 && kindOf(l.name) === 'fix')
+                const growing = l.id !== 0 && l.open && sha === l.commits.at(-1)
                 return (
-                    <g key={sha} className={`t-node ${kind} ${selected === sha ? 'on' : ''} ${who && c.email !== who ? 'dim' : ''}`} onClick={() => onSelect(sha)}>
-                        <title>{`${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString('en-ZA')}`}</title>
-                        <circle className="t-halo" cx={p.x} cy={p.y} r={16} />
-                        <circle className="t-ring" cx={p.x} cy={p.y} r={10.5} />
-                        <SvgFace id={`face-${sha}`} x={p.x} y={p.y} r={9} name={c.author} email={c.email} github={github(c.email)} />
+                    <g key={sha} className={`t-node ${kind} ${shape} ${fix ? 'fix' : ''} ${selected === sha ? 'on' : ''} ${who && c.email !== who ? 'dim' : ''}`} onClick={() => onSelect(sha)}>
+                        <title>{`${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString('en-ZA')}\n${shape === 'diamond' ? 'A merge: work joined here' : shape === 'square' ? 'The first commit' : fix ? 'A fix' : 'A commit'}${growing ? ', the newest on a growing branch' : ''}`}</title>
+                        <circle className="t-halo" cx={p.x} cy={p.y} r={17} />
+                        {growing ? <circle className="t-pulse" cx={p.x} cy={p.y} r={13} /> : null}
+                        <path className="t-ring" d={shapeD(shape, p.x, p.y, 10.5)} />
+                        <SvgFace id={`face-${sha}`} x={p.x} y={p.y} r={9} name={c.author} email={c.email} github={github(c.email)} shape={shape} />
                         <circle cx={p.x} cy={p.y} r={14} fill="transparent" />
                     </g>
                 )
@@ -433,7 +439,7 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
                     taken.push({ x, y, w, h })
                     const kind = l.id === 0 ? 'trunk' : live(l) ? 'open' : 'merged'
                     out.push(
-                        <g key={`card${l.id}`} className={`t-card ${kind}`} onClick={() => onSelect(tipSha)}>
+                        <g key={`card${l.id}`} className={`t-card ${kind} ${l.id !== 0 && kindOf(l.name) === 'fix' ? 'fix' : ''}`} onClick={() => onSelect(tipSha)}>
                             <title>{l.name}</title>
                             {side !== 0 ? <line className="t-card-link" x1={tip.x + side * 11} y1={tip.y} x2={side === 1 ? x : x + w} y2={tip.y} /> : <line className="t-card-link" x1={tip.x} y1={tip.y - 11} x2={tip.x} y2={y + h} />}
                             <rect x={x} y={y} width={w} height={h} rx={10} />
@@ -460,11 +466,13 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
                     const text = clip(plain(bySha.get(sha)!.subject), LABEL)
                     const w = text.length * 6.1
                     const sides: (1 | -1)[] = l.id === 0 ? [-1, 1] : [l.side]
+                    // Labels clear the trunk's own width, which is thick near the ground.
+                    const off = l.id === 0 ? Math.max(15, trunkW((trunkVisible.indexOf(sha) + 1) / Math.max(1, trunkPts.length - 1)) / 2 + 8) : 15
                     for (const sd of sides) {
-                        const r = { x: sd === 1 ? p.x + 15 : p.x - 15 - w, y: p.y - 8, w, h: 15 }
+                        const r = { x: sd === 1 ? p.x + off : p.x - off - w, y: p.y - 8, w, h: 15 }
                         if (!free(r)) continue
                         taken.push(r)
-                        out.push(<text key={`lbl${sha}`} className={`t-label ${who && bySha.get(sha)!.email !== who ? 'dim' : ''} ${selected === sha ? 'on' : ''}`} x={sd === 1 ? p.x + 15 : p.x - 15} y={p.y + 4} textAnchor={sd === 1 ? 'start' : 'end'} onClick={() => onSelect(sha)}>{text}</text>)
+                        out.push(<text key={`lbl${sha}`} className={`t-label ${who && bySha.get(sha)!.email !== who ? 'dim' : ''} ${selected === sha ? 'on' : ''}`} x={sd === 1 ? p.x + off : p.x - off} y={p.y + 4} textAnchor={sd === 1 ? 'start' : 'end'} onClick={() => onSelect(sha)}>{text}</text>)
                         break
                     }
                 }
@@ -1163,6 +1171,8 @@ export function CodeTree()
                 </div>
             </header>
 
+            {t && !pb ? <Legend /> : null}
+
             {graph.data && t && pb ? (
                 <footer className="tree-bottom">
                     <Scrubber
@@ -1199,6 +1209,31 @@ export function CodeTree()
             ) : null}
 
             {view && repo && t ? <Viewer repo={repo} t={t} seq={view.seq} start={view.start} label={view.label} onClose={() => setView(null)} /> : null}
+        </div>
+    )
+}
+
+/** The key: what each shape and style on the tree means. */
+function Legend()
+{
+    const [open, setOpen] = useState(() => { try { return localStorage.getItem('studio-legend') !== 'closed' } catch { return true } })
+    const flip = () => { setOpen(!open); try { localStorage.setItem('studio-legend', open ? 'closed' : 'open') } catch { /* fine */ } }
+    const item = (svg: ReactNode, label: string) => <li><svg viewBox="-12 -12 24 24" width={22} height={22} aria-hidden="true">{svg}</svg><span>{label}</span></li>
+    return (
+        <div className={`tree-legend ${open ? 'open' : ''}`}>
+            <button className="legend-toggle" onClick={flip} aria-expanded={open}>{open ? 'Hide key' : 'Key'}</button>
+            {open ? (
+                <ul>
+                    {item(<path className="lg-ring" d={shapeD('circle', 0, 0, 8)} />, 'A commit, with its author')}
+                    {item(<path className="lg-ring" d={shapeD('diamond', 0, 0, 8)} />, 'A merge: work joined here')}
+                    {item(<path className="lg-ring" d={shapeD('square', 0, 0, 8)} />, 'Where the project began')}
+                    {item(<><circle className="lg-pulse" r={10.5} /><path className="lg-ring" d={shapeD('circle', 0, 0, 7)} /></>, 'Newest on a growing branch')}
+                    {item(<path className="lg-ring fix" d={shapeD('circle', 0, 0, 8)} />, 'A fix')}
+                    {item(<rect className="lg-card open" x={-10} y={-6} width={20} height={12} rx={4} />, 'A branch still growing')}
+                    {item(<rect className="lg-card merged" x={-10} y={-6} width={20} height={12} rx={4} />, 'A branch merged back')}
+                    {item(<rect className="lg-card trunk" x={-10} y={-6} width={20} height={12} rx={4} />, 'Main, the trunk')}
+                </ul>
+            ) : null}
         </div>
     )
 }
