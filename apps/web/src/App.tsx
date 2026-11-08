@@ -15,6 +15,7 @@ import { Automations } from './pages/Automations.tsx'
 import { Settings } from './pages/Settings.tsx'
 import { Activity } from './pages/Activity.tsx'
 import { MyDay, MyTasks, MyTime, MyClaims, MyLeave } from './pages/Employee.tsx'
+import { CodeTree } from './pages/CodeTree.tsx'
 
 export function App()
 {
@@ -127,6 +128,7 @@ function ManageShell()
                 </div>
                 {link('/manage', 'Today', Icon.today, approvals.data?.approvals.length)}
                 {link('/projects', 'Projects', Icon.projects)}
+                {link('/code', 'Code tree', Icon.tree)}
                 {on('money') ? link('/money', 'Money', Icon.money) : null}
                 {on('people') ? link('/people', 'People', Icon.people) : null}
                 {on('sales') ? link('/sales', 'Sales', Icon.sales) : null}
@@ -145,6 +147,7 @@ function ManageShell()
                 <Routes>
                     <Route path="/manage" element={<Today />} />
                     <Route path="/projects" element={<Projects />} />
+                    <Route path="/code" element={<CodeTree />} />
                     <Route path="/records/:id" element={<RecordPage />} />
                     <Route path="/money/*" element={<Money />} />
                     <Route path="/people/*" element={<People />} />

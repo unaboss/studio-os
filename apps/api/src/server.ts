@@ -1,11 +1,15 @@
+import { execFile } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { promisify } from 'node:util'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import postgres from 'postgres'
 import { pgliteDb, postgresJsDb, type Db } from '@studio-os/core'
 import { listModels, vultrInference, type Inference } from '@studio-os/agent'
 import { createApp } from './app.ts'
+import { codeRepos, type CodeRepos } from './codetree.ts'
 import { folderSandbox } from './sandbox.ts'
 import { startScheduler } from './scheduler.ts'
 import { githubService } from './services.ts'
@@ -68,6 +72,24 @@ async function main(): Promise<void>
         await seedDemo(db)
     }
 
+    // The code tree keeps each project's repo on this machine's disk.
+    let code: CodeRepos | null = null
+    const hasGit = await promisify(execFile)('git', ['--version']).then(() => true, () => false)
+    if (hasGit) {
+        const dir = env.CODE_DIR ?? join(tmpdir(), 'studio-os-code')
+        let local: Record<string, string> = {}
+        if (env.SEED_DEMO === '1') {
+            const { makeDemoRepos } = await import('./demo-repos.ts')
+            local = await makeDemoRepos(join(dir, 'demo')).catch((err) => {
+                console.error('code tree: could not build the demo repos', err)
+                return {}
+            })
+        }
+        code = codeRepos({ dir, local, token: env.GITHUB_TOKEN })
+        setInterval(() => void code?.refreshAll(), 5 * 60_000).unref()
+        console.log(`code tree: repos kept in ${dir}, fetched every 5 minutes`)
+    } else console.log('code tree: off (git is not installed)')
+
     const app = createApp({
         db,
         sessionSecret: secret,
@@ -78,6 +100,7 @@ async function main(): Promise<void>
         sandbox,
         mail: { resendKey: env.RESEND_API_KEY, from: env.MAIL_FROM },
         demo: env.DEMO === '1',
+        code,
     })
 
     const web = resolve(env.WEB_DIST ?? join(import.meta.dirname, '../../web/dist'))

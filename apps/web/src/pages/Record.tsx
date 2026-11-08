@@ -164,7 +164,10 @@ function ProjectView({ record, children }: { record: StoredRecord; children: Rec
             <section style={{ marginBottom: 24 }}>
                 <div className="spread" style={{ marginBottom: 10 }}>
                     <h2>Tasks {record.data.repo ? <span className="small faint mono">· synced with {String(record.data.repo)}</span> : null}</h2>
-                    <button className="btn sm primary" onClick={() => setAdding(true)}><Icon.plus /> Task</button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        {record.data.repo ? <Link className="btn sm" to={`/code?repo=${encodeURIComponent(String(record.data.repo))}`}><Icon.tree /> Code tree</Link> : null}
+                        <button className="btn sm primary" onClick={() => setAdding(true)}><Icon.plus /> Task</button>
+                    </div>
                 </div>
                 <div className="board">
                     {lanes.map((lane) => {

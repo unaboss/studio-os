@@ -17,10 +17,11 @@ import
     type Db,
     type Side,
 } from '@studio-os/core'
-import { checkParsedLines, formatSignature, runMorning, writeBankParser, type Inference } from '@studio-os/agent'
+import { checkParsedLines, explainChange, formatSignature, runMorning, writeBankParser, type Explanation, type Inference } from '@studio-os/agent'
 import { GITHUB, handleGithubEvent, type GithubService } from '@studio-os/module-github'
 import { importBankLines, parseBankCsv, withFingerprints } from '@studio-os/module-money'
 import { hashPassword, readSession, sessionToken, verifyGithubSignature, verifyPassword } from './auth.ts'
+import { CodeError, REPO_NAME, type CodeRepos } from './codetree.ts'
 import type { Sandbox } from './sandbox.ts'
 import { mailService } from './services.ts'
 import { Companies, INSTALLED } from './studio.ts'
@@ -37,6 +38,8 @@ export interface AppOptions
     readonly mail?: { resendKey?: string | undefined; from?: string | undefined }
     /** Shows the demo logins on the sign-in page. */
     readonly demo?: boolean
+    /** Repos kept on the server for the code tree. */
+    readonly code?: CodeRepos | null
     readonly now?: () => Date
 }
 
@@ -79,6 +82,7 @@ export function createApp(opts: AppOptions): Hono<Env>
 
     app.onError((err, c) => {
         if (err instanceof ValidationError) return c.json({ error: err.message, problems: err.problems }, 400)
+        if (err instanceof CodeError) return c.json({ error: err.message, problems: [err.message] }, 400)
         if (err instanceof ConfigError) return c.json({ error: err.message }, 400)
         if (err instanceof ForbiddenError) return c.json({ error: err.message }, 403)
         if (err instanceof NotFoundError) return c.json({ error: err.message }, 404)
@@ -559,6 +563,67 @@ export function createApp(opts: AppOptions): Hono<Env>
         if (!opts.sandbox) throw new ValidationError(['The sandbox is not running'])
         const lines = withFingerprints(checkParsedLines(await opts.sandbox.run(parser.code, String(csv))))
         return c.json(await importBankLines(ctx, lines, name))
+    })
+
+    // ---- Code tree: each project's repo as a tree of branches and commits ----
+
+    /** Repos linked to projects this person can see. Nobody can point the server at other repos. */
+    const projectRepos = async (ctx: Ctx) =>
+    {
+        const projects = await ctx.records.list('project', { limit: 500 })
+        return projects
+            .filter((p) => typeof p.data.repo === 'string' && REPO_NAME.test(String(p.data.repo).trim()))
+            .map((p) => ({ projectId: p.id, project: p.title, status: p.status, repo: String(p.data.repo).trim() }))
+    }
+    const allowedRepo = async (c: Context<Env>) =>
+    {
+        if (!opts.code) throw new ValidationError(['The code tree is not set up on this server'])
+        const repo = String(c.req.query('repo') ?? '')
+        if (!(await projectRepos(c.get('ctx'))).some((r) => r.repo === repo)) throw new ForbiddenError('Link this repo to a project first')
+        return { code: opts.code, repo }
+    }
+
+    app.get('/api/code', async (c) => c.json({ enabled: !!opts.code, repos: await projectRepos(c.get('ctx')) }))
+
+    app.get('/api/code/graph', async (c) => {
+        const { code, repo } = await allowedRepo(c)
+        return c.json(await code.graph(repo))
+    })
+
+    app.get('/api/code/commit', async (c) => {
+        const { code, repo } = await allowedRepo(c)
+        return c.json(await code.commit(repo, String(c.req.query('sha') ?? '')))
+    })
+
+    app.get('/api/code/files', async (c) => {
+        const { code, repo } = await allowedRepo(c)
+        return c.json({ files: await code.files(repo, String(c.req.query('sha') ?? '')) })
+    })
+
+    const explained = new Map<string, Explanation>()
+    app.post('/api/code/explain', async (c) => {
+        const { code, repo } = await allowedRepo(c)
+        const b = await c.req.json<{ sha?: string; base?: string; branch?: string }>()
+        const sha = String(b.sha ?? '')
+        const key = `${repo}:${b.base ?? ''}:${sha}`
+        const cached = explained.get(key)
+        if (cached) return c.json(cached)
+        let result: Explanation
+        if (b.base) {
+            const r = await code.range(repo, String(b.base), sha)
+            result = await explainChange(opts.inference ?? null, { repo, kind: 'branch', title: String(b.branch ?? 'this branch'), commits: r.commits, files: r.files, patch: r.patch })
+        } else {
+            const d = await code.commit(repo, sha)
+            result = await explainChange(opts.inference ?? null, { repo, kind: 'commit', title: d.commit.subject, commits: [d.commit], files: d.files, patch: d.patch })
+        }
+        if (explained.size > 500) explained.clear()
+        explained.set(key, result)
+        return c.json(result)
+    })
+
+    app.get('/api/code/file', async (c) => {
+        const { code, repo } = await allowedRepo(c)
+        return c.json(await code.file(repo, String(c.req.query('sha') ?? ''), String(c.req.query('path') ?? '')))
     })
 
     return app
