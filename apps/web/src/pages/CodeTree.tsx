@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ago, api, useApi } from '../api.ts'
-import { Avatar } from '../avatar.tsx'
+import { Avatar, realLogin } from '../avatar.tsx'
 import { Icon } from '../icons.tsx'
 import { Pill, useStudio } from '../ui.tsx'
 
@@ -565,7 +565,7 @@ function Contributors({ commits, who, onPick, people }: { commits: Commit[]; who
                                 <Avatar name={p.name} email={p.email} github={person?.github} size={44} />
                                 <div>
                                     <b>{p.name}</b>
-                                    <div className="small faint">{person?.github ? `@${person.github}` : p.email}</div>
+                                    <div className="small faint">{realLogin(person?.github, p.email) ? `@${person!.github}` : p.email}</div>
                                     <div className="small">{p.count} {p.count === 1 ? 'commit' : 'commits'} here · last {ago(p.last)}</div>
                                     {person ? <Link className="small" to={`/team/${person.id}`}>View profile →</Link> : null}
                                 </div>
@@ -656,7 +656,7 @@ export function CodeTree()
     const peopleApi = useApi<{ people: PersonLite[] }>('/api/code/people')
     const people = peopleApi.data?.people ?? []
     const repos = list.data?.repos ?? []
-    const repo = params.get('repo') ?? repos[0]?.repo ?? null
+    const repo = params.get('repo') ?? (repos.find((r) => r.repo === 'demo-studio/tidepool-booking') ?? repos[0])?.repo ?? null
     const graph = useApi<Graph>(repo ? `/api/code/graph?repo=${encodeURIComponent(repo)}` : null)
     const [selected, setSelected] = useState<string | null>(null)
     const [who, setWho] = useState<string | null>(null)

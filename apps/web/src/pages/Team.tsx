@@ -1,7 +1,7 @@
 // People: everyone who grows the trees, solo or as a team. Each card opens a profile.
 import { Link } from 'react-router-dom'
 import { ago, useApi } from '../api.ts'
-import { Avatar } from '../avatar.tsx'
+import { Avatar, realLogin } from '../avatar.tsx'
 import { Empty } from '../ui.tsx'
 
 export interface Person
@@ -52,7 +52,7 @@ export function Team()
                         <Avatar name={p.name} email={p.email} github={p.github} size={64} ring />
                         <div className="person-id">
                             <b>{p.name}</b>
-                            <span className="small faint">{p.github ? `@${p.github}` : p.role === 'manager' ? 'Manager' : 'Developer'}</span>
+                            <span className="small faint">{realLogin(p.github, p.email) ? `@${p.github}` : p.role === 'manager' ? 'Manager' : 'Developer'}</span>
                         </div>
                         {p.calendar ? <Sparkweeks calendar={p.calendar} /> : null}
                         <div className="person-nums">
