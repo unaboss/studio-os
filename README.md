@@ -13,7 +13,7 @@ It started as the system [North Tech Africa](https://northtech.africa), a two-pe
 **Tree** (home)
 - A **project switcher** across the top. Each project shows its client and a **health dot** that comes from the code alone: red when checks are failing, amber when a branch has had no commits for 10 days, a review is waiting, or an active project has gone quiet for 14 days. The reasons sit right under the switcher.
 - The **tree** itself. Open branches have fresh leaves and a name tag at their tip. Merged branches, even ones deleted on GitHub, are rebuilt from their merge commits (`fix/stock-sync · #19`).
-- A **commit panel**. *Changes* shows the files and the diff. *Code at this point* lets you browse every file in the repo as it was at that commit. *Explain this commit* and *Explain the whole branch* ask the agent for a summary and what a reviewer should check.
+- A **commit panel**. *Changes* shows the files and the diff. *Code at this point* lets you browse every file in the repo as it was at that commit. *Explain this commit* and *Explain the whole branch* ask the agent for a summary and what a reviewer should check, and *Ask the agent* takes any question about the code at that commit ("where is the deposit taken?", "is this safe to ship?").
 - **Contributors** along the bottom. Tap a person and the tree dims everything except their work.
 
 **View**: any commit or branch of a website opens the site itself, exactly as it was at that commit, served by the VM straight from git. Play a branch and watch the site grow commit by commit: in the demo, Tidepool's booking site goes from a bare skeleton to hero, dive calendar, course cards and the deposit form.
@@ -47,7 +47,7 @@ flowchart LR
 ```
 
 - **Vultr Cloud Compute is where the code lives.** Each linked repository is kept on the VM's own disk as a bare, blob-less clone (history first, file contents fetched the first time someone opens them). The server fetches every repo every five minutes, so the tree is always current and walking back through old code never waits on GitHub or hits its API rate limits. This is why it needs a machine and not functions: an always-on process, a persistent disk and `git` itself.
-- **Vultr Serverless Inference is the agent.** When someone asks it to explain a commit or a branch, the server gathers the facts (authors, the commits, files changed, and the diff trimmed to fit) and asks the model for a short summary and a list of things a reviewer should check, as JSON. Answers are cached per commit. Without a key, the agent still answers from the same facts in plain words: who changed what, which areas, whether payment or auth code was touched, and whether tests came with it.
+- **Vultr Serverless Inference is the agent.** When someone asks it to explain a commit or a branch, the server gathers the facts (authors, the commits, files changed, and the diff trimmed to fit) and asks the model for a short summary and a list of things a reviewer should check, as JSON. Answers are cached per commit. Questions in *Ask the agent* are grounded the same way: the commit, its diff, every file in the repo at that point, and any file the question names, read straight from git. The client is plain OpenAI-compatible chat completions, so `INFERENCE_BASE_URL`, `INFERENCE_API_KEY` and `INFERENCE_MODEL` point it at any compatible endpoint; it defaults to Vultr. Without a key, the agent still answers from the same facts in plain words: who changed what, which areas, whether payment or auth code was touched, and whether tests came with it.
 - **The VM serves every commit's website.** `View` asks the server for a signed link that expires in six hours. The files come straight out of git at that commit (the first folder with an `index.html`: the root, `public/`, `site/`, `docs/`, `dist/` and so on), with a sandbox Content-Security-Policy, so a site's scripts run in an opaque origin and can never reach the app, even when the page is opened in its own tab.
 - **Postgres on the VM** holds the people, projects and GitHub events (checks, pull requests, review requests) that feed the health dots.
 
@@ -57,6 +57,7 @@ flowchart LR
 apps/api/src/codetree.ts      the repos on disk: graph, commit, files, file at a commit, range
 apps/api/src/codeinsights.ts  health per project and work per person, from the code
 apps/agent/src/explain.ts     the agent's commit and branch explanations
+apps/agent/src/ask.ts         questions about the code at a commit
 apps/web/src/pages/CodeTree.tsx   the tree: layout, drawing, commit panel, contributors
 apps/api                      Hono API, sessions, GitHub webhook, demo data
 packages/core                 records, events, actions, registry

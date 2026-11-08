@@ -7,7 +7,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import postgres from 'postgres'
 import { pgliteDb, postgresJsDb, type Db } from '@studio-os/core'
-import { listModels, vultrInference, type Inference } from '@studio-os/agent'
+import { listModels, VULTR_BASE_URL, vultrInference, type Inference } from '@studio-os/agent'
 import { createApp } from './app.ts'
 import { codeRepos, type CodeRepos } from './codetree.ts'
 import { folderSandbox } from './sandbox.ts'
@@ -37,11 +37,11 @@ export async function connect(): Promise<{ db: Db; close: () => Promise<void> }>
 }
 
 /** Picks a chat model when none is named: the first that looks like a general instruct model. */
-async function chooseModel(apiKey: string): Promise<string | null>
+async function chooseModel(apiKey: string, baseUrl: string): Promise<string | null>
 {
     try {
-        const models = await listModels(apiKey)
-        const preferred = models.find((m) => /qwen|deepseek|llama|glm|mistral/i.test(m) && !/embed|safety|guard|whisper|tts|image/i.test(m))
+        const models = await listModels(apiKey, baseUrl)
+        const preferred = models.find((m) => /qwen|deepseek|llama|glm|mistral|gpt/i.test(m) && !/embed|safety|guard|whisper|tts|image/i.test(m))
         return preferred ?? models[0] ?? null
     } catch (err) {
         console.error('inference: could not list models', err)
@@ -55,14 +55,18 @@ export async function main(): Promise<void>
     if (!secret || secret.length < 32) throw new Error('Set SESSION_SECRET to at least 32 random characters')
     const { db } = await connect()
 
+    // Vultr Serverless Inference by default. Any OpenAI-compatible endpoint
+    // works too: set INFERENCE_BASE_URL, INFERENCE_API_KEY and INFERENCE_MODEL.
     let inference: Inference | null = null
-    if (env.VULTR_INFERENCE_API_KEY) {
-        const model = env.VULTR_INFERENCE_MODEL || (await chooseModel(env.VULTR_INFERENCE_API_KEY))
+    const apiKey = env.INFERENCE_API_KEY || env.VULTR_INFERENCE_API_KEY
+    const baseUrl = env.INFERENCE_BASE_URL || VULTR_BASE_URL
+    if (apiKey) {
+        const model = env.INFERENCE_MODEL || env.VULTR_INFERENCE_MODEL || (await chooseModel(apiKey, baseUrl))
         if (model) {
-            inference = vultrInference({ apiKey: env.VULTR_INFERENCE_API_KEY, model })
-            console.log(`inference: Vultr Serverless Inference, model ${model}`)
+            inference = vultrInference({ apiKey, model, baseUrl })
+            console.log(`inference: ${baseUrl === VULTR_BASE_URL ? 'Vultr Serverless Inference' : baseUrl}, model ${model}`)
         }
-    } else console.log('inference: off (no VULTR_INFERENCE_API_KEY); the agent writes plain briefs')
+    } else console.log('inference: off (no VULTR_INFERENCE_API_KEY); the agent answers from the facts in plain words')
 
     const github = env.GITHUB_TOKEN ? githubService(env.GITHUB_TOKEN) : null
     const sandbox = env.SANDBOX_DIR ? folderSandbox(env.SANDBOX_DIR) : null

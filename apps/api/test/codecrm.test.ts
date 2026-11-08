@@ -74,6 +74,33 @@ describe('code CRM', () => {
         expect((await get('/api/code/graph?repo=someone/else')).status).toBe(403)
     })
 
+    it('answers questions about the code at a commit, grounded on that commit', async () => {
+        const get = await as('lerato@demo.studio', 'demo-employee')
+        const graph = await get('/api/code/graph?repo=demo-studio/tidepool-booking')
+        const tip = graph.body.branches.find((b: any) => b.name === 'deposit-payments').sha
+        const plain = await get('/api/code/ask?repo=demo-studio/tidepool-booking', { sha: tip, question: 'What does app.js do now?' })
+        expect(plain.status).toBe(200)
+        expect(plain.body.model).toBeNull()
+        expect(plain.body.answer).toMatch(/app\.js/)
+        expect((await get('/api/code/ask?repo=demo-studio/tidepool-booking', { sha: tip, question: '' })).status).toBe(400)
+        expect((await get('/api/code/ask?repo=someone/else', { sha: tip, question: 'hi' })).status).toBe(403)
+    })
+
+    it('hands the model the commit, the file list and the files a question names', async () => {
+        const { askAboutCode } = await import('@studio-os/agent')
+        let seen = ''
+        const fake = { model: 'test-model', chat: async (m: readonly { content: string }[]) => { seen = m.map((x) => x.content).join('\n'); return 'It takes the deposit.' } }
+        const r = await askAboutCode(fake, {
+            repo: 'a/b', sha: 'abc1234def', commit: { subject: 'Deposit payments', author: 'Sipho Dlamini', date: '2026-11-04' },
+            changed: [{ path: 'app.js', added: 10, removed: 2 }], patch: '+pay()', files: ['index.html', 'app.js'],
+            opened: [{ path: 'app.js', content: 'function pay() {}' }],
+        }, 'What does app.js do?')
+        expect(r).toEqual({ answer: 'It takes the deposit.', model: 'test-model' })
+        expect(seen).toContain('Deposit payments')
+        expect(seen).toContain('index.html')
+        expect(seen).toContain('function pay() {}')
+    })
+
     it("serves a branch's website as it was at that commit, sandboxed", async () => {
         const get = await as('lerato@demo.studio', 'demo-employee')
         const graph = await get('/api/code/graph?repo=demo-studio/tidepool-booking')

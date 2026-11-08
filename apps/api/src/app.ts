@@ -20,7 +20,7 @@ import
     type Db,
     type Side,
 } from '@studio-os/core'
-import { checkParsedLines, explainChange, formatSignature, runMorning, writeBankParser, type Explanation, type Inference } from '@studio-os/agent'
+import { askAboutCode, checkParsedLines, explainChange, filesNamed, formatSignature, runMorning, writeBankParser, type Explanation, type Inference } from '@studio-os/agent'
 import { GITHUB, handleGithubEvent, type GithubService } from '@studio-os/module-github'
 import { importBankLines, parseBankCsv, withFingerprints } from '@studio-os/module-money'
 import { hashPassword, readSession, sessionToken, verifyGithubSignature, verifyPassword } from './auth.ts'
@@ -729,6 +729,34 @@ export function createApp(opts: AppOptions): Hono<Env>
         if (explained.size > 500) explained.clear()
         explained.set(key, result)
         return c.json(result)
+    })
+
+    // Ask the agent anything about the code at one commit. It is grounded on
+    // that commit, its diff, the file list and any file the question names.
+    const asked = new Map<string, number[]>()
+    app.post('/api/code/ask', async (c) => {
+        const { code, repo } = await allowedRepo(c)
+        const b = await c.req.json<{ sha?: unknown; question?: unknown; history?: unknown }>()
+        const sha = String(b.sha ?? '')
+        const question = typeof b.question === 'string' ? b.question.trim() : ''
+        if (!question || question.length > 1000) throw new ValidationError(['Ask a question of up to 1000 characters'])
+        const history = Array.isArray(b.history)
+            ? b.history.filter((t): t is { role: 'user' | 'assistant'; content: string } =>
+                !!t && typeof t === 'object' && (t.role === 'user' || t.role === 'assistant') && typeof t.content === 'string').slice(-8)
+            : []
+        const who = c.get('ctx').actor.id
+        const recent = (asked.get(who) ?? []).filter((t) => t > Date.now() - 10 * 60_000)
+        if (recent.length >= 30) return c.json({ error: 'That is a lot of questions. Try again in a few minutes.' }, 429)
+        asked.set(who, [...recent, Date.now()])
+        const [d, files] = await Promise.all([code.commit(repo, sha), code.files(repo, sha)])
+        const opened = []
+        for (const path of filesNamed(question, files)) {
+            const f = await code.file(repo, sha, path).catch(() => null)
+            if (f && !f.binary) opened.push({ path, content: f.content.slice(0, 8000) })
+        }
+        return c.json(await askAboutCode(opts.inference ?? null, {
+            repo, sha, commit: d.commit, changed: d.files, patch: d.patch, files, opened,
+        }, question, history))
     })
 
     app.get('/api/code/file', async (c) => {
