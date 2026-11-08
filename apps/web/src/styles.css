@@ -155,6 +155,7 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); }
 .card-pad { padding: 16px 18px; }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.card-head h2 svg { width: 18px; height: 18px; vertical-align: -3px; margin-right: 6px; flex: none; }
 .section { margin-top: 28px; }
 .section > h2 { margin-bottom: 10px; }
 
