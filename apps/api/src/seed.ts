@@ -226,6 +226,66 @@ export async function seedDemo(db: Db, opts: { reset?: boolean; now?: Date } = {
     await runMorning(as(AGENT), null)
 }
 
+export interface Showcase
+{
+    /** A real person to add to the demo team, matched to commits by name. */
+    readonly owner?: { name: string; github: string }
+    /** The client the real projects sit under. */
+    readonly client: string
+    readonly repos: readonly { repo: string; title: string }[]
+}
+
+/** Reads the showcase from DEMO_OWNER ("Name|login"), DEMO_CLIENT and DEMO_REPOS ("owner/name=Title,…"). */
+export function showcaseFromEnv(env: Record<string, string | undefined>): Showcase | null
+{
+    const repos = (env.DEMO_REPOS ?? '').split(',').map((s) => s.trim()).filter(Boolean).flatMap((s) => {
+        const [repo, title] = s.split('=').map((x) => x.trim()) as [string, string | undefined]
+        return /^[\w.-]+\/[\w.-]+$/.test(repo) ? [{ repo, title: title || repo.split('/')[1]! }] : []
+    })
+    if (!repos.length) return null
+    const [name, github] = (env.DEMO_OWNER ?? '').split('|').map((x) => x.trim())
+    return { owner: name && github ? { name, github } : undefined, client: env.DEMO_CLIENT?.trim() || repos[0]!.repo.split('/')[0]!, repos }
+}
+
+/**
+ * Adds real people and real public repos to the demo studio, next to the
+ * made-up ones, so visitors see real trees and a real contribution graph.
+ * Safe to run on every start: it only adds what is missing.
+ */
+export async function seedShowcase(db: Db, show: Showcase, opts: { now?: Date } = {}): Promise<void>
+{
+    const company = await db.query('select 1 from companies where id = $1', [DEMO_COMPANY])
+    if (company.length === 0) return
+    const registry = await new Companies(db).registry(DEMO_COMPANY)
+    const lead: Actor = { id: 'usr_demo_thabo', kind: 'user', role: 'manager', name: 'Thabo Nkosi' }
+    const ctx = createContext({ db, companyId: DEMO_COMPANY, actor: lead, registry, now: () => opts.now ?? new Date() })
+
+    let ownerId: string | null = null
+    if (show.owner) {
+        ownerId = 'usr_demo_owner'
+        const exists = await db.query('select 1 from users where id = $1', [ownerId])
+        if (exists.length === 0) {
+            // Nobody signs in as this person: the password is random and never shown.
+            await db.query(
+                'insert into users (id, company_id, email, name, role, password_hash, github_login) values ($1, $2, $3, $4, $5, $6, $7)',
+                [ownerId, DEMO_COMPANY, `${show.owner.github.toLowerCase()}@users.noreply.github.com`, show.owner.name, 'manager', await hashPassword(crypto.randomUUID()), show.owner.github],
+            )
+            await ctx.records.create({ type: 'person', title: show.owner.name, data: { user: ownerId, jobTitle: 'Founder', github: show.owner.github, leaveDays: 18 } })
+        }
+    }
+
+    const projects = await ctx.records.list('project', { limit: 1000 })
+    const missing = show.repos.filter((r) => !projects.some((p) => String(p.data.repo ?? '').toLowerCase() === r.repo.toLowerCase()))
+    if (!missing.length) return
+    const clients = await ctx.records.list('client', { limit: 1000 })
+    const client = clients.find((c) => c.title.toLowerCase() === show.client.toLowerCase())
+        ?? await ctx.records.create({ type: 'client', title: show.client, status: 'Active', data: {} })
+    const members = (await db.query<{ id: string }>('select id from users where company_id = $1 and active', [DEMO_COMPANY])).map((u) => u.id)
+    for (const r of missing) {
+        await ctx.records.create({ type: 'project', title: r.title, status: 'Active', parentId: client.id, data: { client: client.id, projectType: 'build', repo: r.repo, lead: ownerId ?? lead.id, members } })
+    }
+}
+
 if (process.argv[1]?.endsWith('seed.ts')) {
     const { connect } = await import('./server.ts')
     const { db, close } = await connect()

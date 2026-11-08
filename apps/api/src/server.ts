@@ -72,8 +72,10 @@ export async function main(): Promise<void>
     const sandbox = env.SANDBOX_DIR ? folderSandbox(env.SANDBOX_DIR) : null
 
     if (env.SEED_DEMO === '1') {
-        const { seedDemo } = await import('./seed.ts')
+        const { seedDemo, seedShowcase, showcaseFromEnv } = await import('./seed.ts')
         await seedDemo(db)
+        const show = showcaseFromEnv(env)
+        if (show) await seedShowcase(db, show).catch((err) => console.error('demo: could not add the showcase repos', err))
     }
 
     // The code tree keeps each project's repo on this machine's disk.
