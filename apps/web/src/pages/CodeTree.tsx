@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useSearchParams } from 'react-router-dom'
 import { ago, announceChange, api, useApi } from '../api.ts'
 import { Avatar, realLogin, SvgFace } from '../avatar.tsx'
@@ -613,7 +614,7 @@ function CommitView({ repo, sha, t, people, onSelect, onBack, onWatch, onView }:
                     </ul>
                 </section>
             ) : null}
-            {code ? <CodeDialog repo={repo} sha={sha} detail={d} onClose={() => setCode(false)} /> : null}
+            {code ? createPortal(<CodeDialog repo={repo} sha={sha} detail={d} onClose={() => setCode(false)} />, document.body) : null}
         </>
     )
 }
@@ -823,7 +824,8 @@ interface GhRepo { full_name: string; description: string | null; language: stri
 function GitHubPlanter({ planted, onPlanted }: { planted: string[]; onPlanted: (repo: string) => void })
 {
     const { me, toast } = useStudio()
-    const [user, setUser] = useState(me.githubLogin ?? '')
+    const known = realLogin(me.githubLogin, me.email) ?? ''
+    const [user, setUser] = useState(known)
     const [list, setList] = useState<GhRepo[] | null>(null)
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
@@ -850,7 +852,7 @@ function GitHubPlanter({ planted, onPlanted }: { planted: string[]; onPlanted: (
             setLoading(false)
         }
     }
-    useEffect(() => { if (me.githubLogin) void load(me.githubLogin) }, [])
+    useEffect(() => { if (known) void load(known) }, [])
 
     const plant = async (repo: string) => {
         setBusy(repo)
@@ -947,10 +949,11 @@ function Switcher({ repos, repo, onPick }: { repos: RepoRow[]; repo: string | nu
                     ) : null}
                 </div>
             ) : null}
-            {planting ? (
+            {planting ? createPortal(
                 <Dialog title="Plant a tree from GitHub" onClose={() => setPlanting(false)} wide>
                     <GitHubPlanter planted={repos.map((r) => r.repo)} onPlanted={(r) => { setPlanting(false); onPick(r) }} />
-                </Dialog>
+                </Dialog>,
+                document.body,
             ) : null}
         </div>
     )
