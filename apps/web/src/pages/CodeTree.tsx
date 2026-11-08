@@ -304,8 +304,8 @@ const seeded = (key: string, n: number) => {
     return h / 4294967295
 }
 
-function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
-    g: Graph; t: Grown; upto: number; selected: string | null; onSelect: (sha: string) => void; who: string | null; box: HTMLDivElement | null; people: PersonLite[]
+function Tree({ g, t, upto, selected, onSelect, who, box, people, off }: {
+    g: Graph; t: Grown; upto: number; selected: string | null; onSelect: (sha: string) => void; who: string | null; box: HTMLDivElement | null; people: PersonLite[]; off: Set<KeyId>
 })
 {
     const { limbs, at, cx, width, height, groundY, bySha, index, ROW } = t
@@ -332,6 +332,16 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
     const dateEvery = Math.max(1, Math.round(150 / ROW))
     const months = new Set<string>()
     const live = (l: Limb) => l.id !== 0 && (l.open || !l.mergeInto || !seen(l.mergeInto))
+    // Keys switched off in the legend take their marks off the tree.
+    const limbOff = (l: Limb) => l.id !== 0 && off.has(live(l) ? 'open' : 'merged')
+    const budOff = (sha: string, l: Limb) => {
+        if (limbOff(l)) return true
+        const c = bySha.get(sha)!
+        if (c.parents.length > 1) return off.has('merge')
+        if (c.parents.length === 0) return false
+        return off.has(isFix(c.subject) || (l.id !== 0 && kindOf(l.name) === 'fix') ? 'fix' : 'commit')
+    }
+    const buds = (l: Limb) => l.commits.filter((sha) => seen(sha) && !budOff(sha, l))
 
     return (
         <svg className="tree-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Commit tree for ${g.repo}`}>
@@ -360,10 +370,10 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
             )))}
 
             {/* The crown, behind the wood: fuller over live work, faint over merged work. */}
-            <Crown kind="old" clusters={limbs.filter((l) => l.id !== 0 && !live(l) && l.commits.some(seen)).map((l) => { const p = at.get(l.commits.filter(seen).at(-1)!)!; return { key: `o${l.id}`, x: p.x + l.side * 6, y: p.y - 8, r: 26 } })} />
+            <Crown kind="old" clusters={limbs.filter((l) => l.id !== 0 && !live(l) && !limbOff(l) && l.commits.some(seen)).map((l) => { const p = at.get(l.commits.filter(seen).at(-1)!)!; return { key: `o${l.id}`, x: p.x + l.side * 6, y: p.y - 8, r: 26 } })} />
             <Crown kind="live" clusters={[
                 ...(trunkVisible.length ? [(() => { const p = at.get(trunkVisible.at(-1)!)!; return { key: 'crown', x: p.x, y: p.y - 34, r: 96 } })()] : []),
-                ...limbs.filter((l) => live(l) && l.commits.some(seen)).flatMap((l) => {
+                ...limbs.filter((l) => live(l) && !limbOff(l) && l.commits.some(seen)).flatMap((l) => {
                     const vis = l.commits.filter(seen)
                     const tip = at.get(vis.at(-1)!)!
                     const mid = at.get(vis[Math.floor(vis.length / 2)]!)!
@@ -372,7 +382,7 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
             ]} />
 
             {/* Grafts: merged work joining back. */}
-            {limbs.slice(1).filter((l) => l.mergeInto && at.has(l.mergeInto) && seen(l.mergeInto)).map((l) => {
+            {limbs.slice(1).filter((l) => !limbOff(l) && l.mergeInto && at.has(l.mergeInto) && seen(l.mergeInto)).map((l) => {
                 const tip = at.get(l.commits.at(-1)!)!
                 const into = at.get(l.mergeInto!)!
                 return <path key={`m${l.id}`} className="t-graft" d={limbPath([[tip.x, tip.y], [into.x, into.y]], () => 1.8, false)} />
@@ -381,7 +391,7 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
             {/* Branches, then the trunk over their bases. */}
             {limbs.slice(1).map((l) => {
                 const vis = l.commits.filter(seen)
-                if (!vis.length) return null
+                if (!vis.length || limbOff(l)) return null
                 const base = l.fork && at.has(l.fork) ? at.get(l.fork)! : at.get(l.commits[0]!)!
                 const pts: Pt[] = [[base.x, base.y], ...vis.map((s) => [at.get(s)!.x, at.get(s)!.y] as Pt)]
                 const thick = 7 + Math.min(l.commits.length, 8) * 1.3
@@ -391,7 +401,7 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
 
 
             {/* One bud per commit. */}
-            {limbs.map((l) => l.commits.filter(seen).map((sha) => {
+            {limbs.map((l) => buds(l).map((sha) => {
                 const p = at.get(sha)!
                 const c = bySha.get(sha)!
                 const kind = l.id === 0 ? 'trunk' : live(l) ? 'open' : 'merged'
@@ -412,7 +422,7 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
             }))}
 
             {/* Labelled links: where merged work joined back. */}
-            {limbs.slice(1).filter((l) => l.mergeInto && at.has(l.mergeInto) && seen(l.mergeInto)).map((l) => {
+            {limbs.slice(1).filter((l) => !limbOff(l) && l.mergeInto && at.has(l.mergeInto) && seen(l.mergeInto)).map((l) => {
                 const tip = at.get(l.commits.at(-1)!)!
                 const into = at.get(l.mergeInto!)!
                 return <text key={`ml${l.id}`} className="t-link" x={(tip.x + into.x) / 2 + l.side * 8} y={(tip.y + into.y) / 2 - 4} textAnchor={l.side === 1 ? 'start' : 'end'}>merged{l.pr ? ` ${l.pr}` : ''}</text>
@@ -422,12 +432,12 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
             {(() => {
                 const taken: { x: number; y: number; w: number; h: number }[] = []
                 const free = (r: { x: number; y: number; w: number; h: number }) => !taken.some((o) => r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h)
-                for (const l of limbs) for (const sha of l.commits.filter(seen)) { const p = at.get(sha)!; taken.push({ x: p.x - 11, y: p.y - 11, w: 22, h: 22 }) }
+                for (const l of limbs) for (const sha of buds(l)) { const p = at.get(sha)!; taken.push({ x: p.x - 11, y: p.y - 11, w: 22, h: 22 }) }
                 const out: ReactNode[] = []
                 const tips = new Set<string>()
                 for (const l of limbs) {
                     const vis = l.commits.filter(seen)
-                    if (!vis.length) continue
+                    if (!vis.length || limbOff(l)) continue
                     const tipSha = vis.at(-1)!
                     const tip = at.get(tipSha)!
                     const w = l.id === 0 ? Math.max(120, (t.limbs[0]!.name.length + 6) * 7.4) : tagWidth(l)
@@ -459,7 +469,7 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
                     )
                 }
                 // Commit labels, newest first so recent work wins any tight spot.
-                const order = limbs.flatMap((l) => l.commits.filter(seen).map((sha) => ({ l, sha }))).sort((a, b) => (index.get(b.sha) ?? 0) - (index.get(a.sha) ?? 0))
+                const order = limbs.flatMap((l) => buds(l).map((sha) => ({ l, sha }))).sort((a, b) => (index.get(b.sha) ?? 0) - (index.get(a.sha) ?? 0))
                 for (const { l, sha } of order) {
                     if (tips.has(sha)) continue
                     const p = at.get(sha)!
@@ -1085,6 +1095,17 @@ export function CodeTree()
     const [box, setBox] = useState<HTMLDivElement | null>(null)
     const [size, setSize] = useState({ w: 0, h: 0 })
     const [panelOpen, setPanelOpen] = useState(() => { try { return localStorage.getItem('studio-panel') !== 'closed' } catch { return true } })
+    const [off, setOff] = useState<Set<KeyId>>(() => {
+        try { return new Set((JSON.parse(localStorage.getItem('studio-keys-off') ?? '[]') as string[]).filter((k): k is KeyId => SWITCHES.some((s) => s.id === k))) } catch { return new Set() }
+    })
+    const switchKey = (k: KeyId | 'all') => setOff((was) => {
+        const next = new Set(was)
+        if (k === 'all') next.clear()
+        else if (next.has(k)) next.delete(k)
+        else next.add(k)
+        try { localStorage.setItem('studio-keys-off', JSON.stringify([...next])) } catch { /* fine for this visit */ }
+        return next
+    })
     const togglePanel = (open: boolean) => {
         setPanelOpen(open)
         try { localStorage.setItem('studio-panel', open ? 'open' : 'closed') } catch { /* fine for this visit */ }
@@ -1149,7 +1170,7 @@ export function CodeTree()
     return (
         <div className={`tree-page ${t && panelOpen ? 'has-drawer' : ''} ${shown ? 'picked' : ''}`}>
             <div className="tree-canvas" ref={setBox}>
-                {t && graph.data ? <Tree g={graph.data} t={t} upto={upto} selected={shown} onSelect={(s) => { setPb(null); setSelected(s); togglePanel(true) }} who={who} box={box} people={people} /> : null}
+                {t && graph.data ? <Tree g={graph.data} t={t} upto={upto} selected={shown} onSelect={(s) => { setPb(null); setSelected(s); togglePanel(true) }} who={who} box={box} people={people} off={off} /> : null}
             </div>
             {body}
 
@@ -1171,7 +1192,7 @@ export function CodeTree()
                 </div>
             </header>
 
-            {t && !pb ? <Legend /> : null}
+            {t && !pb ? <Legend off={off} onSwitch={switchKey} /> : null}
 
             {graph.data && t && pb ? (
                 <footer className="tree-bottom">
@@ -1213,26 +1234,55 @@ export function CodeTree()
     )
 }
 
-/** The key: what each shape and style on the tree means. */
-function Legend()
+type KeyId = 'commit' | 'merge' | 'fix' | 'open' | 'merged'
+
+const lgShape = (shape: Shape, cls = '') => <path className={`lg-ring ${cls}`} d={shapeD(shape, 0, 0, 8)} />
+const lgCard = (cls: string) => <rect className={`lg-card ${cls}`} x={-10} y={-6} width={20} height={12} rx={4} />
+
+/** Keys that can be switched off, each taking its marks off the tree. */
+const SWITCHES: { id: KeyId; label: string; svg: ReactNode }[] = [
+    { id: 'commit', label: 'A commit, with its author', svg: lgShape('circle') },
+    { id: 'merge', label: 'A merge: work joined here', svg: lgShape('diamond') },
+    { id: 'fix', label: 'A fix', svg: lgShape('circle', 'fix') },
+    { id: 'open', label: 'A branch still growing', svg: lgCard('open') },
+    { id: 'merged', label: 'A branch merged back', svg: lgCard('merged') },
+]
+
+/** The key: what each shape and style on the tree means, and a switch to hide each kind. */
+function Legend({ off, onSwitch }: { off: Set<KeyId>; onSwitch: (k: KeyId | 'all') => void })
 {
     const [open, setOpen] = useState(() => { try { return localStorage.getItem('studio-legend') !== 'closed' } catch { return true } })
     const flip = () => { setOpen(!open); try { localStorage.setItem('studio-legend', open ? 'closed' : 'open') } catch { /* fine */ } }
-    const item = (svg: ReactNode, label: string) => <li><svg viewBox="-12 -12 24 24" width={22} height={22} aria-hidden="true">{svg}</svg><span>{label}</span></li>
+    const icon = (svg: ReactNode) => <svg viewBox="-12 -12 24 24" width={22} height={22} aria-hidden="true">{svg}</svg>
+    const fixed = (svg: ReactNode, label: string) => <li className="lg-fixed">{icon(svg)}<span>{label}</span></li>
     return (
         <div className={`tree-legend ${open ? 'open' : ''}`}>
-            <button className="legend-toggle" onClick={flip} aria-expanded={open}>{open ? 'Hide key' : 'Key'}</button>
+            <button className="legend-toggle" onClick={flip} aria-expanded={open}>
+                {open ? 'Hide key' : 'Key'}{!open && off.size ? <span className="lg-count"> · {off.size} hidden</span> : null}
+            </button>
             {open ? (
-                <ul>
-                    {item(<path className="lg-ring" d={shapeD('circle', 0, 0, 8)} />, 'A commit, with its author')}
-                    {item(<path className="lg-ring" d={shapeD('diamond', 0, 0, 8)} />, 'A merge: work joined here')}
-                    {item(<path className="lg-ring" d={shapeD('square', 0, 0, 8)} />, 'Where the project began')}
-                    {item(<><circle className="lg-pulse" r={10.5} /><path className="lg-ring" d={shapeD('circle', 0, 0, 7)} /></>, 'Newest on a growing branch')}
-                    {item(<path className="lg-ring fix" d={shapeD('circle', 0, 0, 8)} />, 'A fix')}
-                    {item(<rect className="lg-card open" x={-10} y={-6} width={20} height={12} rx={4} />, 'A branch still growing')}
-                    {item(<rect className="lg-card merged" x={-10} y={-6} width={20} height={12} rx={4} />, 'A branch merged back')}
-                    {item(<rect className="lg-card trunk" x={-10} y={-6} width={20} height={12} rx={4} />, 'Main, the trunk')}
-                </ul>
+                <>
+                    <ul aria-label="Show or hide on the tree">
+                        {SWITCHES.map((k) => {
+                            const on = !off.has(k.id)
+                            return (
+                                <li key={k.id}>
+                                    <button className={`lg-switch ${on ? 'on' : 'off'}`} role="switch" aria-checked={on} onClick={() => onSwitch(k.id)} title={on ? `Hide: ${k.label.toLowerCase()}` : `Show: ${k.label.toLowerCase()}`}>
+                                        {icon(k.svg)}
+                                        <span>{k.label}</span>
+                                        <i className="lg-pill" aria-hidden="true" />
+                                    </button>
+                                </li>
+                            )
+                        })}
+                    </ul>
+                    <ul className="lg-always">
+                        {fixed(lgShape('square'), 'Where the project began')}
+                        {fixed(<><circle className="lg-pulse" r={10.5} /><path className="lg-ring" d={shapeD('circle', 0, 0, 7)} /></>, 'Newest on a growing branch')}
+                        {fixed(lgCard('trunk'), 'Main, the trunk')}
+                    </ul>
+                    {off.size ? <button className="lg-reset" onClick={() => onSwitch('all')}>Show all</button> : null}
+                </>
             ) : null}
         </div>
     )
