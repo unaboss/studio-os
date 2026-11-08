@@ -33,4 +33,11 @@ export const Icon = {
     upload: make(['M12 16V4', 'M7 9l5-5 5 5', 'M4 20h16']),
     up: make('M6 15l6-6 6 6'),
     down: make('M6 9l6 6 6-6'),
+    play: make('M8 5.5v13l10.5-6.5z'),
+    pause: make(['M9 5v14', 'M15 5v14']),
+    prev: make(['M18 6l-8 6 8 6', 'M6 6v12']),
+    next: make(['M6 6l8 6-8 6', 'M18 6v12']),
+    eye: make(['M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6']),
+    refresh: make(['M20 11a8 8 0 0 0-14.6-4.5L4 8', 'M4 3v5h5', 'M4 13a8 8 0 0 0 14.6 4.5L20 16', 'M20 21v-5h-5']),
+    back: make(['M15 6l-6 6 6 6']),
 }
