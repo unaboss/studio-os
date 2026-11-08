@@ -105,19 +105,27 @@ export async function codePeople(ctx: Ctx, db: Db, code: CodeRepos | null, repos
         const branches: { repo: string; project: string; name: string; date: string; subject: string; sha: string }[] = []
         const recent: { repo: string; project: string; sha: string; subject: string; date: string }[] = []
         let commits14 = 0
+        // Commits per day for the last half year: the profile's contribution graph.
+        const calendar: Record<string, number> = {}
+        const half = new Date(now.getTime() - 182 * 86_400_000).toISOString()
         for (const r of repos) {
             const graph = g.get(r.projectId)
             if (!graph) continue
             for (const t of branchTips(graph).filter(mine)) branches.push({ repo: r.repo, project: r.project, name: t.name, date: t.date, subject: t.subject, sha: t.sha })
             for (const c of graph.commits.filter(mine)) {
                 if (c.date >= since) commits14++
+                if (c.date >= half) {
+                    const day = new Date(c.date).toISOString().slice(0, 10)
+                    calendar[day] = (calendar[day] ?? 0) + 1
+                }
                 recent.push({ repo: r.repo, project: r.project, sha: c.sha, subject: c.subject, date: c.date })
             }
         }
         recent.sort((a, b) => b.date.localeCompare(a.date))
         branches.sort((a, b) => b.date.localeCompare(a.date))
         const toReview = reviews.filter((v) => v.data.user === u.id).map((v) => ({ id: v.id, title: v.title, repo: String(v.data.repo ?? ''), pr: Number(v.data.pr ?? 0), url: (v.data.url as string) ?? null, author: (v.data.author as string) ?? null }))
-        return { id: u.id, name: u.name, email: u.email, role: u.role, github: u.github_login, commits14, branches, recent: recent.slice(0, 6), reviews: toReview, lastCommit: recent[0]?.date ?? null }
+        const projects = [...new Set(recent.map((c) => c.project))]
+        return { id: u.id, name: u.name, email: u.email, role: u.role, github: u.github_login, commits14, total: recent.length, calendar, projects, branches, recent: recent.slice(0, 15), reviews: toReview, lastCommit: recent[0]?.date ?? null }
     })
     return { people }
 }

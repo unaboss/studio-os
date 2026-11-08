@@ -128,7 +128,9 @@ export function codeRepos(opts: CodeReposOptions): CodeRepos
                 try {
                     await exec('git', [
                         ...(opts.token ? ['-c', `http.https://github.com/.extraheader=AUTHORIZATION: basic ${Buffer.from(`x-access-token:${opts.token}`).toString('base64')}`] : []),
-                        'clone', '--bare', '--filter=blob:none', '--no-tags', '--quiet', `https://github.com/${repo}.git`, dir,
+                        // History first, file contents on first read, and only the last 500 commits of each branch,
+                        // so even a very large repo plants in seconds and stays small on disk.
+                        'clone', '--bare', '--filter=blob:none', '--depth=500', '--no-single-branch', '--no-tags', '--quiet', `https://github.com/${repo}.git`, dir,
                     ], { timeout: 180_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0' } })
                 } catch {
                     throw new CodeError(`Could not reach github.com/${repo}. Check the name, or give the server a GITHUB_TOKEN for private repos.`)

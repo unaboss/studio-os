@@ -5,6 +5,7 @@ import
     AGENT,
     ConfigError,
     createContext,
+    DEFAULT_CONFIG,
     ForbiddenError,
     formatMoney as money,
     newId,
@@ -112,6 +113,7 @@ export function createApp(opts: AppOptions): Hono<Env>
 
     app.get('/api/login-info', (c) => c.json({
         demo: !!opts.demo,
+        signup: true,
         accounts: opts.demo
             ? [
                 { label: 'Manager', email: 'thabo@demo.studio', password: 'demo-manager' },
@@ -140,6 +142,34 @@ export function createApp(opts: AppOptions): Hono<Env>
             maxAge: 14 * 86_400,
         })
         return c.json({ id: user.id, name: user.name, role: user.role })
+    })
+
+    // Anyone can start their own space, solo or as a team, and plant their repos in it.
+    app.post('/api/signup', async (c) => {
+        const b = await c.req.json<{ company?: string; name?: string; email?: string; password?: string }>()
+        const ip = c.req.header('x-forwarded-for') ?? 'local'
+        const a = attempts.get(`signup|${ip}`)
+        if (a && a.n >= 5 && a.until > Date.now()) return c.json({ error: 'Too many new accounts from here. Try again in an hour.' }, 429)
+        const email = String(b.email ?? '').trim().toLowerCase()
+        const name = String(b.name ?? '').trim()
+        const company = String(b.company ?? '').trim() || `${name}'s code`
+        const problems: string[] = []
+        if (!name) problems.push('Your name is needed')
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) problems.push('That email does not look right')
+        if (String(b.password ?? '').length < 10) problems.push('Use a password of 10 or more characters')
+        if (problems.length) throw new ValidationError(problems)
+        if ((await db.query('select 1 from users where lower(email) = $1', [email])).length) throw new ValidationError(['That email already has an account. Sign in instead.'])
+        attempts.set(`signup|${ip}`, { n: (a && a.until > Date.now() ? a.n : 0) + 1, until: Date.now() + 60 * 60_000 })
+        const companyId = newId('co')
+        const config = { ...DEFAULT_CONFIG, modules: ['projects', 'github'], theme: { ...DEFAULT_CONFIG.theme, name: company } }
+        await db.query('insert into companies (id, name, config) values ($1, $2, $3::jsonb)', [companyId, company, JSON.stringify(config)])
+        const userId = newId('usr')
+        await db.query(
+            'insert into users (id, company_id, email, name, role, password_hash) values ($1, $2, $3, $4, $5, $6)',
+            [userId, companyId, email, name, 'manager', await hashPassword(String(b.password))],
+        )
+        setCookie(c, 'sid', sessionToken(opts.sessionSecret, userId), { httpOnly: true, sameSite: 'Lax', secure: opts.secureCookies ?? false, path: '/', maxAge: 14 * 86_400 })
+        return c.json({ id: userId, name, role: 'manager' })
     })
 
     app.post('/api/logout', (c) => {
@@ -592,6 +622,28 @@ export function createApp(opts: AppOptions): Hono<Env>
         const rows = repos.map((r) => ({ ...r, ...health.get(r.projectId) }))
             .sort((a, b) => (b.lastCommit ?? '').localeCompare(a.lastCommit ?? ''))
         return c.json({ enabled: !!opts.code, repos: rows })
+    })
+
+    // Plant a repo: any GitHub repo this server can read grows its own tree.
+    app.post('/api/code/plant', async (c) => {
+        managerOnly(c)
+        const ctx = c.get('ctx')
+        if (!opts.code) throw new ValidationError(['The code tree is not set up on this server'])
+        const raw = String((await c.req.json<{ repo?: string }>()).repo ?? '').trim()
+        const repo = raw.replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '')
+        if (!REPO_NAME.test(repo)) throw new ValidationError(['Write the repo as owner/name, or paste its GitHub link'])
+        const repos = await projectRepos(ctx)
+        if (repos.some((r) => r.repo.toLowerCase() === repo.toLowerCase())) return c.json({ repo: repos.find((r) => r.repo.toLowerCase() === repo.toLowerCase())!.repo })
+        if (repos.length >= 25) throw new ValidationError(['This space already has 25 trees. Remove one first.'])
+        const graph = await opts.code.graph(repo)
+        const [owner, name] = repo.split('/') as [string, string]
+        const clients = await ctx.records.list('client', { limit: 1000 })
+        const client = clients.find((r) => r.title.toLowerCase() === owner.toLowerCase())
+            ?? await ctx.records.create({ type: 'client', title: owner, status: 'Active', data: {} })
+        // Everyone in the space can see a planted tree, so a team shares it from the start.
+        const members = (await db.query<{ id: string }>('select id from users where company_id = $1 and active', [ctx.companyId])).map((u) => u.id)
+        await ctx.records.create({ type: 'project', title: name, status: 'Active', parentId: client.id, data: { client: client.id, projectType: 'build', repo, lead: ctx.actor.id, members, start: graph.commits.at(-1)?.date.slice(0, 10) } })
+        return c.json({ repo })
     })
 
     app.get('/api/code/people', async (c) => {
