@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from 'node:crypto'
+import { extname } from 'node:path'
 import { Hono, type Context } from 'hono'
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie'
 import
@@ -178,6 +180,37 @@ export function createApp(opts: AppOptions): Hono<Env>
     })
 
     /* ---------------- Everything else needs a session ---------------- */
+
+    /* ---------------- Previews: a repo's website as it was at any commit ---------------- */
+
+    // A preview link carries its own signed, expiring token, so the page and its files load
+    // without the session cookie. Pages run sandboxed in an opaque origin, even when opened
+    // in a tab of their own, so a site's scripts can never reach the app or its API.
+    const previewSign = (v: string) => createHmac('sha256', `preview:${opts.sessionSecret}`).update(v).digest('base64url')
+    app.get('/preview/:token', (c) => c.redirect(`${c.req.path}/`))
+    app.get('/preview/:token/*', async (c) => {
+        if (!opts.code) return c.text('Previews are off on this server.', 404)
+        const [payload = '', mac = ''] = c.req.param('token').split('.')
+        const good = Buffer.from(previewSign(payload))
+        if (!payload || good.length !== Buffer.from(mac).length || !timingSafeEqual(good, Buffer.from(mac))) return c.text('This preview link is not valid.', 403)
+        const t = JSON.parse(Buffer.from(payload, 'base64url').toString()) as { r: string; s: string; d: string; e: number }
+        if (t.e < Date.now()) return c.text('This preview link has expired. Press View again.', 410)
+        let path = decodeURIComponent(c.req.path.split('/').slice(3).join('/'))
+        if (!path || path.endsWith('/')) path += 'index.html'
+        let body: Buffer | null = null
+        for (const p of extname(path) ? [path] : [path, `${path}.html`, `${path}/index.html`]) {
+            body = await opts.code.raw(t.r, t.s, t.d + p).catch(() => null)
+            if (body) { path = p; break }
+        }
+        if (!body) return c.text(`${path} is not in this commit.`, 404)
+        return c.body(new Uint8Array(body), 200, {
+            'content-type': PREVIEW_TYPES[extname(path).toLowerCase()] ?? 'application/octet-stream',
+            'content-security-policy': 'sandbox allow-scripts allow-forms allow-modals allow-popups',
+            'x-content-type-options': 'nosniff',
+            'referrer-policy': 'no-referrer',
+            'cache-control': 'private, max-age=3600',
+        })
+    })
 
     app.use('/api/*', async (c, next) => {
         if (MUTATING.has(c.req.method) && !(c.req.header('content-type') ?? '').includes('application/json')) {
@@ -646,6 +679,17 @@ export function createApp(opts: AppOptions): Hono<Env>
         return c.json({ repo })
     })
 
+    // Where a commit's website starts, if it has one: the first folder with an index.html.
+    app.get('/api/code/preview', async (c) => {
+        const { code, repo } = await allowedRepo(c)
+        const sha = String(c.req.query('sha') ?? '')
+        const files = await code.files(repo, sha)
+        const root = SITE_ROOTS.find((r) => files.includes(`${r}index.html`))
+        if (root === undefined) return c.json({ url: null, root: '', reason: 'This commit has no index.html yet, so there is no site to show.' })
+        const payload = Buffer.from(JSON.stringify({ r: repo, s: sha, d: root, e: Date.now() + 6 * 3_600_000 })).toString('base64url')
+        return c.json({ url: `/preview/${payload}.${previewSign(payload)}/`, root })
+    })
+
     app.get('/api/code/people', async (c) => {
         const ctx = c.get('ctx')
         return c.json(await codePeople(ctx, db, opts.code ?? null, await projectRepos(ctx), now()))
@@ -709,4 +753,14 @@ function fillSelf(ctx: Ctx, type: string, data: Record<string, unknown>): Record
         if (field?.kind === 'user') out[rt.assigneeField] = ctx.actor.id
     }
     return out
+}
+
+const SITE_ROOTS = ['', 'public/', 'site/', 'docs/', 'www/', 'dist/', 'build/', 'src/']
+const PREVIEW_TYPES: Record<string, string> = {
+    '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json',
+    '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+    '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon', '.woff': 'font/woff', '.woff2': 'font/woff2',
+    '.ttf': 'font/ttf', '.txt': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.xml': 'application/xml',
+    '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.pdf': 'application/pdf', '.wasm': 'application/wasm',
 }

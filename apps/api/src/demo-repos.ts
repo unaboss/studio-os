@@ -228,29 +228,126 @@ const KAROO: Step[] = [
 ]
 
 // ---- Tidepool Dive School: booking website ----
+// A plain static site, so View shows the site itself as it was at any commit.
 
-const tidepoolCalendar = (v: 1 | 2) => `export interface Dive { id: string; date: string; site: string; spaces: number; booked: number }
+interface Site { hero?: boolean; courses?: boolean; calendar?: 0 | 1 | 2; deposit?: 0 | 1 | 2; footer?: boolean }
 
-export function upcoming(dives: Dive[], today: string) {
-    return dives.filter((d) => d.date >= today).sort((a, b) => a.date.localeCompare(b.date))
+const tpHtml = (s: Site) => `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tidepool Dive School · Sodwana Bay</title>
+${s.hero ? '<link rel="stylesheet" href="styles.css">\n' : ''}</head>
+<body>
+${s.hero ? `<header class="top">
+  <a class="logo" href="#">Tidepool<span>Dive School</span></a>
+  <nav>${s.courses ? '<a href="#courses">Courses</a>' : ''}${s.calendar ? '<a href="#dives">Dives</a>' : ''}${s.deposit ? '<a class="cta" href="#book">Book a dive</a>' : ''}</nav>
+</header>
+<section class="hero">
+  <p class="kicker">Sodwana Bay · iSimangaliso Wetland Park</p>
+  <h1>Learn to dive on Africa's southernmost coral reefs.</h1>
+  <p>Small groups, warm water and instructors who have logged thousands of dives on Two-Mile Reef.</p>
+</section>` : `<h1>Tidepool Dive School</h1>
+<p>Course and dive bookings, Sodwana Bay. Site coming soon.</p>`}
+${s.courses ? `<section id="courses" class="band">
+  <h2>Courses</h2>
+  <div class="cards">
+    <article><h3>Open Water</h3><p>Four days from first breath to 18 metres.</p><b>R6 900</b></article>
+    <article><h3>Advanced</h3><p>Deep, night and navigation dives in two days.</p><b>R5 400</b></article>
+    <article><h3>Nitrox</h3><p>Longer bottom times on the same reef.</p><b>R2 300</b></article>
+  </div>
+</section>
+` : ''}${s.calendar ? `<section id="dives" class="band alt">
+  <h2>Upcoming dives</h2>
+  <ul id="dive-list" class="dives"></ul>
+</section>
+` : ''}${s.deposit ? `<section id="book" class="band">
+  <h2>Book a dive</h2>
+  <form id="book-form" class="book">
+    <label>Course <select id="course"><option value="690000">Open Water · R6 900</option><option value="540000">Advanced · R5 400</option><option value="230000">Nitrox · R2 300</option></select></label>
+    <label>Name <input required placeholder="Your name"></label>
+    <p class="deposit">Deposit today (30%): <b id="deposit-amount">R2 070</b></p>
+${s.deposit === 2 ? '    <p class="small">Full refund of your deposit up to 48 hours before the dive.</p>\n' : ''}    <button>Pay deposit</button>
+  </form>
+</section>
+` : ''}${s.footer ? `<footer>
+  <div><b>Tidepool Dive School</b><br>Jesser Point Road, Sodwana Bay</div>
+  <div>hello@tidepool.example · 035 571 0000</div>
+</footer>
+` : ''}${s.calendar || s.deposit ? '<script src="app.js"></script>\n' : ''}</body>
+</html>
+`
+
+const tpJs = (s: Site) => `${s.calendar ? `const dives = [
+  { date: 'Sat 6 Dec', site: 'Two-Mile Reef', spaces: 8, booked: 8 },
+  { date: 'Sun 7 Dec', site: 'Seven-Mile Reef', spaces: 8, booked: 5 },
+  { date: 'Sat 13 Dec', site: 'Two-Mile Reef', spaces: 10, booked: 3 },
+  { date: 'Sun 14 Dec', site: 'Quarter-Mile Reef', spaces: 6, booked: 1 },
+]
+const list = document.getElementById('dive-list')
+for (const d of dives) {
+  const li = document.createElement('li')
+${s.calendar === 2 ? `  const soldOut = d.booked >= d.spaces
+  li.className = soldOut ? 'sold' : ''
+  li.innerHTML = '<b>' + d.date + '</b><span>' + d.site + '</span><em>' + (soldOut ? 'Sold out' : (d.spaces - d.booked) + ' spaces left') + '</em>'` : `  li.innerHTML = '<b>' + d.date + '</b><span>' + d.site + '</span><em>' + (d.spaces - d.booked) + ' of ' + d.spaces + ' spaces</em>'`}
+  list.appendChild(li)
 }
-${v === 2 ? '\nexport const isSoldOut = (d: Dive) => d.booked >= d.spaces\n' : ''}`
-const deposit = (v: 1 | 2) => `/** Divers pay a 30% deposit to hold a space. */
-export const DEPOSIT_SHARE = 0.3
+` : ''}${s.deposit ? `
+const rand = (cents) => 'R' + Math.round(cents / 100).toLocaleString('en-ZA')
+const course = document.getElementById('course')
+const show = () => { document.getElementById('deposit-amount').textContent = rand(Number(course.value) * 0.3) }
+course.addEventListener('change', show)
+document.getElementById('book-form').addEventListener('submit', (e) => { e.preventDefault(); alert('Deposit paid. See you in Sodwana!') })
+show()
+` : ''}`
 
-export const depositFor = (priceCents: number) => Math.round(priceCents * DEPOSIT_SHARE)
-${v === 2 ? '\n/** Full refund up to 48 hours before the dive; after that the deposit is kept. */\nexport function refundFor(depositCents: number, hoursBefore: number) {\n    return hoursBefore >= 48 ? depositCents : 0\n}\n' : ''}`
+const tpCss = `:root { --sea: #0b4f6c; --deep: #072f42; --sand: #f6f1e7; --coral: #e8735a; --ink: #13232b; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif; color: var(--ink); background: var(--sand); }
+.top { display: flex; justify-content: space-between; align-items: center; padding: 18px 6vw; background: var(--deep); color: #fff; }
+.logo { color: #fff; text-decoration: none; font-weight: 700; font-size: 20px; letter-spacing: -0.3px; }
+.logo span { font-weight: 400; opacity: 0.7; margin-left: 6px; }
+nav a { color: #d5e8ef; text-decoration: none; margin-left: 22px; font-size: 15px; }
+nav a.cta { background: var(--coral); color: #fff; padding: 8px 16px; border-radius: 999px; }
+.hero { padding: 84px 6vw 96px; color: #fff; background: radial-gradient(1200px 500px at 80% 120%, #1d8fb0 0%, transparent 60%), linear-gradient(160deg, var(--deep), var(--sea)); }
+.hero h1 { font-size: clamp(32px, 5vw, 56px); line-height: 1.05; max-width: 720px; margin: 8px 0 16px; letter-spacing: -1px; }
+.hero p { max-width: 560px; color: #cfe4ec; font-size: 18px; }
+.kicker { text-transform: uppercase; letter-spacing: 2px; font-size: 13px !important; color: #8fd0e4 !important; }
+.band { padding: 56px 6vw; }
+.band.alt { background: #fff; }
+h2 { font-size: 28px; margin: 0 0 24px; letter-spacing: -0.4px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; }
+.cards article { background: #fff; border-radius: 14px; padding: 22px; box-shadow: 0 1px 0 rgba(0,0,0,.04), 0 10px 30px rgba(7,47,66,.08); }
+.cards h3 { margin: 0 0 6px; color: var(--sea); }
+.cards b { display: block; margin-top: 12px; font-size: 20px; }
+.dives { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; max-width: 720px; }
+.dives li { display: grid; grid-template-columns: 120px 1fr auto; gap: 12px; padding: 14px 18px; border: 1px solid #e3ddd0; border-radius: 12px; background: var(--sand); }
+.dives em { font-style: normal; color: var(--sea); font-weight: 600; }
+.dives li.sold { opacity: 0.55; }
+.dives li.sold em { color: var(--coral); }
+.book { display: grid; gap: 14px; max-width: 420px; background: #fff; padding: 24px; border-radius: 14px; box-shadow: 0 10px 30px rgba(7,47,66,.08); }
+.book label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+.book input, .book select { font: inherit; padding: 10px 12px; border: 1px solid #d8d2c4; border-radius: 10px; }
+.book button { font: inherit; font-weight: 700; padding: 12px; border: 0; border-radius: 999px; background: var(--coral); color: #fff; cursor: pointer; }
+.deposit { margin: 0; }
+.small { font-size: 13px; color: #5b6b72; margin: 0; }
+footer { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; padding: 36px 6vw; background: var(--deep); color: #cfe4ec; font-size: 14px; }
+`
 
 const TIDEPOOL: Step[] = [
-    c('main', 'thabo', 40, 'Booking site skeleton', { 'README.md': '# Tidepool bookings\n\nCourse and dive bookings for Tidepool Dive School, Sodwana Bay.\n', 'src/index.html': '<!doctype html>\n<title>Tidepool Dive School</title>\n<main id="app"></main>\n' }),
+    c('main', 'thabo', 40, 'Booking site skeleton', { 'README.md': '# Tidepool bookings\n\nThe website for Tidepool Dive School, Sodwana Bay. Plain HTML, CSS and JavaScript: open index.html.\n', 'index.html': tpHtml({}) }),
+    c('main', 'thabo', 38, 'Hero, brand colours and type', { 'index.html': tpHtml({ hero: true }), 'styles.css': tpCss }),
     b('feature/course-calendar'),
-    c('feature/course-calendar', 'lerato', 35, 'Course calendar', { 'src/calendar.ts': tidepoolCalendar(1) }),
-    c('feature/course-calendar', 'lerato', 33, 'Mark sold-out dives', { 'src/calendar.ts': tidepoolCalendar(2) }),
+    c('feature/course-calendar', 'lerato', 35, 'Course calendar', { 'index.html': tpHtml({ hero: true, calendar: 1 }), 'app.js': tpJs({ calendar: 1 }) }),
+    c('feature/course-calendar', 'lerato', 33, 'Mark sold-out dives', { 'app.js': tpJs({ calendar: 2 }) }),
     m('feature/course-calendar', 7, 'thabo', 32, 'Course calendar'),
+    c('main', 'lerato', 26, 'Course cards with prices', { 'index.html': tpHtml({ hero: true, courses: true, calendar: 2 }) }),
     b('deposit-payments'),
-    c('deposit-payments', 'sipho', 20, 'Deposit payments', { 'src/deposit.ts': deposit(1) }),
+    c('deposit-payments', 'sipho', 20, 'Deposit payments', { 'index.html': tpHtml({ hero: true, courses: true, calendar: 2, deposit: 1 }), 'app.js': tpJs({ calendar: 2, deposit: 1 }) }),
     c('main', 'thabo', 10, 'Go-live checklist', { 'docs/go-live.md': '# Go-live\n\n- [ ] Domain and email\n- [ ] Deposit payments tested with a real card\n- [x] Calendar loaded with December dives\n' }),
-    c('deposit-payments', 'sipho', 4, 'Deposit refunds', { 'src/deposit.ts': deposit(2) }),
+    c('main', 'thabo', 6, 'Footer with address and contact', { 'index.html': tpHtml({ hero: true, courses: true, calendar: 2, footer: true }) }),
+    c('deposit-payments', 'sipho', 4, 'Deposit refunds', { 'index.html': tpHtml({ hero: true, courses: true, calendar: 2, deposit: 2 }) }),
 ]
 
 // ---- Marula Health Clinic: patient booking portal ----

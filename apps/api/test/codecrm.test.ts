@@ -73,4 +73,37 @@ describe('code CRM', () => {
         expect(explained.body.review.join(' ')).toMatch(/payment|webhook/i)
         expect((await get('/api/code/graph?repo=someone/else')).status).toBe(403)
     })
+
+    it("serves a branch's website as it was at that commit, sandboxed", async () => {
+        const get = await as('lerato@demo.studio', 'demo-employee')
+        const graph = await get('/api/code/graph?repo=demo-studio/tidepool-booking')
+        const tip = graph.body.branches.find((b: any) => b.name === 'deposit-payments').sha
+        const skeleton = graph.body.commits.at(-1).sha
+        const { body } = await get(`/api/code/preview?repo=demo-studio/tidepool-booking&sha=${tip}`)
+        expect(body.url).toMatch(/^\/preview\/[\w-]+\.[\w-]+\/$/)
+        // No cookie needed: the link carries its own signed token.
+        const page = await app.request(body.url)
+        expect(page.status).toBe(200)
+        expect(page.headers.get('content-security-policy')).toMatch(/^sandbox /)
+        expect(await page.text()).toContain('Pay deposit')
+        const css = await app.request(`${body.url}styles.css`)
+        expect(css.headers.get('content-type')).toMatch(/text\/css/)
+        // The first commit is the bare skeleton, with no booking form yet.
+        const first = await get(`/api/code/preview?repo=demo-studio/tidepool-booking&sha=${skeleton}`)
+        expect(await (await app.request(first.body.url)).text()).not.toContain('Pay deposit')
+        expect((await app.request(body.url.replace(/\.[\w-]+\/$/, '.forged/'))).status).toBe(403)
+        expect((await app.request(`${body.url}../../etc/passwd`)).status).not.toBe(200)
+        const marula = await get('/api/code/graph?repo=demo-studio/marula-portal')
+        expect((await get(`/api/code/preview?repo=demo-studio/marula-portal&sha=${marula.body.commits[0].sha}`)).body.url).toBeNull()
+    })
+
+    it('lets anyone start their own space, solo or as a team', async () => {
+        const res = await app.request('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Ayanda Zulu', email: 'ayanda@example.com', password: 'a long password' }) })
+        expect(res.status).toBe(200)
+        const cookie = res.headers.get('set-cookie')!.split(';')[0]!
+        const code = await (await app.request('/api/code', { headers: { cookie } })).json() as any
+        expect(code.repos).toEqual([])
+        const again = await app.request('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Ayanda', email: 'AYANDA@example.com', password: 'a long password' }) })
+        expect(again.status).toBe(400)
+    })
 })

@@ -60,6 +60,8 @@ export interface CodeRepos
     graph(repo: string): Promise<TreeGraph>
     files(repo: string, sha: string): Promise<string[]>
     file(repo: string, sha: string, path: string): Promise<FileAt>
+    /** A file's raw bytes at a commit, for serving a site as it was then. Up to 5 MB. */
+    raw(repo: string, sha: string, path: string): Promise<Buffer>
     commit(repo: string, sha: string): Promise<CommitDetail>
     /** Everything between two commits, newest first: a branch since it forked. */
     range(repo: string, base: string, head: string): Promise<{ commits: TreeCommit[]; files: ChangedFile[]; patch: string }>
@@ -85,6 +87,7 @@ const SEP = '\x1f'
 const MAX_COMMITS = 400
 const MAX_FILE = 200_000
 const MAX_PATCH = 120_000
+const MAX_RAW = 5_000_000
 
 export class CodeError extends Error {}
 
@@ -145,6 +148,10 @@ export function codeRepos(opts: CodeReposOptions): CodeRepos
         return job
     }
 
+    const checkPath = (path: string) => {
+        if (!path || path.startsWith('-') || path.startsWith('/') || path.includes('\0') || path.split('/').includes('..')) throw new CodeError('Not a file path')
+    }
+
     const checkSha = (sha: string) => {
         if (!SHA.test(sha)) throw new CodeError('Not a commit id')
     }
@@ -184,12 +191,26 @@ export function codeRepos(opts: CodeReposOptions): CodeRepos
         async file(repo, sha, path)
         {
             checkSha(sha)
-            if (!path || path.startsWith('-') || path.includes('\0') || path.split('/').includes('..')) throw new CodeError('Not a file path')
+            checkPath(path)
             const dir = await open(repo)
             const size = Number((await git(dir, ['cat-file', '-s', `${sha}:${path}`]).catch(() => { throw new CodeError('That file is not in this commit') })).trim())
             const raw = await git(dir, ['cat-file', 'blob', `${sha}:${path}`], Math.max(size + 1024, 1024 * 1024))
             const binary = raw.slice(0, 8000).includes('\0')
             return { path, size, binary, truncated: raw.length > MAX_FILE, content: binary ? '' : raw.slice(0, MAX_FILE) }
+        },
+
+        async raw(repo, sha, path)
+        {
+            checkSha(sha)
+            checkPath(path)
+            const dir = await open(repo)
+            const size = Number((await git(dir, ['cat-file', '-s', `${sha}:${path}`]).catch(() => { throw new CodeError('That file is not in this commit') })).trim())
+            if (size > MAX_RAW) throw new CodeError('That file is too big to preview')
+            const { stdout } = await exec('git', ['-C', dir, 'cat-file', 'blob', `${sha}:${path}`], {
+                encoding: 'buffer', maxBuffer: MAX_RAW + 1024, timeout: 60_000,
+                env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' },
+            })
+            return stdout
         },
 
         async commit(repo, sha)
