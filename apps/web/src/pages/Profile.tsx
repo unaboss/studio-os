@@ -2,7 +2,7 @@
 import { useMemo } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ago, useApi } from '../api.ts'
-import { Avatar } from '../avatar.tsx'
+import { Avatar, isDemo, realLogin } from '../avatar.tsx'
 import { Icon } from '../icons.tsx'
 import { Empty } from '../ui.tsx'
 import type { Person } from './Team.tsx'
@@ -58,6 +58,7 @@ export function Profile()
     if (error) return <Empty title="Could not load this profile">{error}</Empty>
     if (!data) return null
     if (!p) return <Empty title="No one by that link">They may have left the team. <Link to="/team">See everyone</Link></Empty>
+    const login = realLogin(p.github, p.email)
     return (
         <div className="profile">
             <Link to="/team" className="back-link small"><Icon.back /> People</Link>
@@ -65,9 +66,9 @@ export function Profile()
                 <aside className="profile-side">
                     <Avatar name={p.name} email={p.email} github={p.github} size={200} ring />
                     <h1>{p.name}</h1>
-                    <div className="profile-handle">{p.github ? `@${p.github}` : p.email}</div>
+                    <div className="profile-handle">{login ? `@${login}` : p.email}</div>
                     <div className="profile-role">{p.role === 'manager' ? 'Manager' : 'Developer'}</div>
-                    {p.github ? <a className="btn sm block-ish" href={`https://github.com/${p.github}`} target="_blank" rel="noreferrer"><Icon.github /> GitHub profile</a> : null}
+                    {login ? <a className="btn sm block-ish" href={`https://github.com/${login}`} target="_blank" rel="noreferrer"><Icon.github /> GitHub profile</a> : null}
                     <dl className="profile-facts">
                         <div><dt>Commits</dt><dd className="num">{p.total ?? p.recent.length}</dd></div>
                         <div><dt>Last 14 days</dt><dd className="num">{p.commits14}</dd></div>
@@ -92,7 +93,7 @@ export function Profile()
                                 {p.reviews.map((r) => (
                                     <li key={r.id}>
                                         <span className="health watch" />
-                                        {r.url ? <a href={r.url} target="_blank" rel="noreferrer">{r.title}</a> : <Link to={`/records/${r.id}`}>{r.title}</Link>}
+                                        {r.url && !isDemo(p.email) ? <a href={r.url} target="_blank" rel="noreferrer">{r.title}</a> : <Link to={`/records/${r.id}`}>{r.title}</Link>}
                                         <span className="small faint mono">{r.repo}{r.pr ? ` #${r.pr}` : ''}</span>
                                     </li>
                                 ))}

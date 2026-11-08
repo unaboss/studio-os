@@ -34,8 +34,12 @@ function Identicon({ seed, size }: { seed: string; size: number })
     )
 }
 
-const realLogin = (github: string | null | undefined, email: string | undefined) =>
-    github && !/@demo\.studio$/i.test(email ?? '') && /^[a-z\d](?:[a-z\d-]{0,38})$/i.test(github) ? github : null
+/** Demo people are made up; their logins may belong to real strangers on GitHub. */
+export const isDemo = (email: string | undefined) => /@demo\.studio$/i.test(email ?? '')
+
+/** A GitHub login we may show and link to, or null. */
+export const realLogin = (github: string | null | undefined, email: string | undefined) =>
+    github && !isDemo(email) && /^[a-z\d](?:[a-z\d-]{0,38})$/i.test(github) ? github : null
 
 export function Avatar({ name, email, github, size = 32, ring }: { name: string; email?: string; github?: string | null; size?: number; ring?: boolean })
 {
