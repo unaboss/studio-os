@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ago, api, useApi } from '../api.ts'
-import { Avatar, realLogin } from '../avatar.tsx'
+import { ago, announceChange, api, useApi } from '../api.ts'
+import { Avatar, realLogin, SvgFace } from '../avatar.tsx'
 import { Icon } from '../icons.tsx'
-import { Pill, useStudio } from '../ui.tsx'
+import { Dialog, Pill, useStudio } from '../ui.tsx'
 
 export { colour, initials } from '../avatar.tsx'
 
@@ -42,12 +42,27 @@ interface Limb
 
 interface Placed { x: number; y: number; limb: number }
 
-const TOP = 96
+const TOP = 120
 const BOTTOM = 150
 
 const short = (name: string) => (name.length > 26 ? `${name.slice(0, 25)}…` : name)
-const tagLabel = (l: Limb) => (l.id === 0 ? l.name : `${short(l.name)}${l.open ? '' : l.pr ? `  ${l.pr}` : ''}`)
-const tagWidth = (l: Limb) => tagLabel(l).length * 7 + 22
+/** A branch name as an idea: feature/yoco-payments becomes Yoco payments. */
+const human = (name: string) => {
+    const words = name.replace(/^(feature|feat|fix|bugfix|hotfix|chore|refactor|release)\//i, '').replace(/[-_/.]+/g, ' ').trim()
+    return words ? words[0]!.toUpperCase() + words.slice(1) : name
+}
+const kindOf = (name: string) => (/^(fix|bugfix|hotfix)\//i.test(name) ? 'fix' : /^(feature|feat)\//i.test(name) ? 'feature' : 'branch')
+const plain = (subject: string) => {
+    const pr = /Merge pull request #(\d+) from [^/\s]+\/(\S+)/.exec(subject)
+    if (pr) return `Merged ${human(pr[2]!).toLowerCase()} #${pr[1]}`
+    const br = /Merge branch '([^']+)'/.exec(subject)
+    return br ? `Merged ${human(br[1]!).toLowerCase()}` : subject
+}
+const clip = (text: string, n: number) => (text.length > n ? `${text.slice(0, n - 1)}…` : text)
+const cardTitle = (l: Limb) => clip(human(l.name), 30)
+const cardSub = (l: Limb) => `${kindOf(l.name)} · ${l.commits.length} ${l.commits.length === 1 ? 'commit' : 'commits'} · ${l.open ? 'growing' : l.pr ? `merged ${l.pr}` : 'merged'}`
+const tagWidth = (l: Limb) => Math.max(cardTitle(l).length * 7.3, cardSub(l).length * 5.9) + 26
+const LABEL = 34
 
 function grow(g: Graph, minWidth = 0, minHeight = 0)
 {
@@ -126,7 +141,7 @@ function grow(g: Graph, minWidth = 0, minHeight = 0)
     // Spread the branches out to use the screen, within reason.
     const lanes = Math.max(1, ...limbs.slice(1).map((l) => l.lane))
     const LANE = minWidth ? Math.round(Math.min(124, Math.max(76, (minWidth / 2 - 300) / lanes))) : 78
-    const reach = (side: 1 | -1) => Math.max(160, ...limbs.filter((l) => l.id !== 0 && l.side === side).map((l) => l.lane * LANE + 40 + tagWidth(l)))
+    const reach = (side: 1 | -1) => Math.max(230, ...limbs.filter((l) => l.id !== 0 && l.side === side).map((l) => l.lane * LANE + 40 + Math.max(tagWidth(l), LABEL * 6.1)))
     const left = reach(-1) + 90
     const right = reach(1) + 40
     const extra = Math.max(0, minWidth - left - right)
@@ -160,36 +175,58 @@ function lineage(t: Grown, tip: string): string[]
     return out.reverse()
 }
 
-// ---- Drawing ----
+// ---- Drawing: a real-looking tree, kept quiet ----
 
-/** A tapering stroke through points: thick where it starts, fine at the tip. */
-function Taper({ points, from, to, className }: { points: [number, number][]; from: number; to: number; className: string })
+type Pt = [number, number]
+
+/** A filled, tapering limb through points, smooth like wood rather than a line. */
+function limbPath(points: Pt[], width: (u: number) => number, limb: boolean): string
 {
-    const parts: ReactNode[] = []
+    const samples: Pt[] = []
     for (let i = 1; i < points.length; i++) {
         const [x0, y0] = points[i - 1]!
         const [x1, y1] = points[i]!
-        const w = from + (to - from) * (i / Math.max(1, points.length - 1))
-        const my = (y0 + y1) / 2
-        parts.push(<path key={`${x1},${y1}`} className={`t-seg ${className}`} pathLength={1} d={`M${x0},${y0} C${x0},${my} ${x1},${my} ${x1},${y1}`} strokeWidth={w} />)
+        const dx = x1 - x0
+        const dy = y1 - y0
+        // The first stretch of a branch leaves the trunk sideways, then turns up to the light.
+        const c1: Pt = limb && i === 1 ? [x0 + dx * 0.55, y0 + dy * 0.05] : [x0, y0 + dy / 2]
+        const c2: Pt = limb && i === 1 ? [x1, y0 + dy * 0.55] : [x1, y0 + dy / 2]
+        for (let s = i === 1 ? 0 : 1; s <= 12; s++) {
+            const t = s / 12
+            const a = (1 - t) ** 3, b = 3 * (1 - t) ** 2 * t, c = 3 * (1 - t) * t * t, d = t ** 3
+            samples.push([a * x0 + b * c1[0] + c * c2[0] + d * x1, a * y0 + b * c1[1] + c * c2[1] + d * y1])
+        }
     }
-    return <>{parts}</>
+    if (samples.length < 2) return ''
+    const left: Pt[] = []
+    const right: Pt[] = []
+    samples.forEach(([x, y], i) => {
+        const [px, py] = samples[Math.max(0, i - 1)]!
+        const [nx, ny] = samples[Math.min(samples.length - 1, i + 1)]!
+        const len = Math.hypot(nx - px, ny - py) || 1
+        const w = width(i / (samples.length - 1)) / 2
+        const ox = (-(ny - py) / len) * w
+        const oy = ((nx - px) / len) * w
+        left.push([x + ox, y + oy])
+        right.push([x - ox, y - oy])
+    })
+    const f = (p: Pt) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`
+    const tipR = (width(1) / 2).toFixed(1)
+    return `M${left.map(f).join(' L')} A${tipR},${tipR} 0 0 1 ${f(right.at(-1)!)} L${[...right].reverse().map(f).join(' L')} Z`
 }
 
-function Tree({ g, t, upto, selected, onSelect, who, box }: {
-    g: Graph; t: Grown; upto: number; selected: string | null; onSelect: (sha: string) => void; who: string | null; box: HTMLDivElement | null
+function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
+    g: Graph; t: Grown; upto: number; selected: string | null; onSelect: (sha: string) => void; who: string | null; box: HTMLDivElement | null; people: PersonLite[]
 })
 {
     const { limbs, at, cx, width, height, groundY, bySha, index, ROW } = t
     const seen = (sha: string) => (index.get(sha) ?? 0) <= upto
 
     useEffect(() => {
-        // Open on the trunk, with the newest growth in view.
         if (!box) return
         if (width > box.clientWidth) box.scrollLeft = cx - box.clientWidth / 2
     }, [box, g, width, cx])
 
-    // Keep the playing commit in view.
     useEffect(() => {
         if (!box || !selected || !at.has(selected)) return
         const p = at.get(selected)!
@@ -199,18 +236,19 @@ function Tree({ g, t, upto, selected, onSelect, who, box }: {
 
     const trunk = limbs[0]!
     const trunkVisible = trunk.commits.filter(seen)
-    const trunkPts: [number, number][] = [[cx, groundY], ...trunkVisible.map((s) => [at.get(s)!.x, at.get(s)!.y] as [number, number])]
+    const trunkPts: Pt[] = [[cx, groundY + 4], ...trunkVisible.map((s) => [at.get(s)!.x, at.get(s)!.y] as Pt)]
+    const trunkW = (u: number) => 2.4 + 6 * (1 - u) ** 0.8 + 5 * Math.max(0, 1 - u * 8) ** 2
+    const github = (email: string) => people.find((p) => p.email.toLowerCase() === email.toLowerCase())?.github ?? null
     const dateEvery = Math.max(1, Math.round(150 / ROW))
     const months = new Set<string>()
+    const live = (l: Limb) => l.id !== 0 && (l.open || !l.mergeInto || !seen(l.mergeInto))
 
     return (
         <svg className="tree-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Commit tree for ${g.repo}`}>
             <defs>
-                <radialGradient id="tree-glow"><stop offset="0" className="glow-stop" stopOpacity="0.11" /><stop offset="1" className="glow-stop" stopOpacity="0" /></radialGradient>
                 <linearGradient id="tree-ground" x1="0" x2="1"><stop offset="0" className="ground-stop" stopOpacity="0" /><stop offset="0.5" className="ground-stop" stopOpacity="1" /><stop offset="1" className="ground-stop" stopOpacity="0" /></linearGradient>
             </defs>
 
-            {/* Time, quietly, down the left. */}
             {t.asc.map((c, i) => {
                 const month = c.date.slice(0, 7)
                 const show = i % dateEvery === 0 || !months.has(month)
@@ -225,118 +263,115 @@ function Tree({ g, t, upto, selected, onSelect, who, box }: {
                 )
             })}
 
-            {/* A soft light behind live growth. */}
-            {limbs.filter((l) => l.open && l.commits.some(seen)).map((l) => {
-                const tip = at.get(l.commits.filter(seen).at(-1)!)!
-                return <circle key={l.id} cx={tip.x} cy={tip.y} r={l.id === 0 ? 150 : 90} fill="url(#tree-glow)" />
-            })}
-
-            {/* Ground: one hairline and fine roots. */}
-            <line x1={cx - 260} x2={cx + 260} y1={groundY} y2={groundY} stroke="url(#tree-ground)" strokeWidth={1} />
-            {[-1, 1].map((d) => [0, 1, 2].map((r) => (
-                <path key={`${d}${r}`} className="t-root" d={`M${cx + d * 2},${groundY} C${cx + d * (8 + r * 8)},${groundY + 6 + r * 3} ${cx + d * (24 + r * 20)},${groundY + 8 + r * 5} ${cx + d * (40 + r * 34)},${groundY + 12 + r * 7}`} strokeWidth={2.2 - r * 0.6} />
+            {/* Ground: one hairline and a few fine roots. */}
+            <line x1={cx - 240} x2={cx + 240} y1={groundY + 2} y2={groundY + 2} stroke="url(#tree-ground)" strokeWidth={1} />
+            {[-1, 1].map((d) => [0, 1].map((r) => (
+                <path key={`${d}${r}`} className="t-wood" d={limbPath([[cx + d * 3, groundY - 4], [cx + d * (22 + r * 30), groundY + 16 + r * 6]], (u) => (3 - r * 1.2) * (1 - u) + 0.8, false)} />
             )))}
 
             {/* Grafts: merged work joining back. */}
             {limbs.slice(1).filter((l) => l.mergeInto && at.has(l.mergeInto) && seen(l.mergeInto)).map((l) => {
                 const tip = at.get(l.commits.at(-1)!)!
                 const into = at.get(l.mergeInto!)!
-                return <path key={`m${l.id}`} className="t-seg t-graft" pathLength={1} d={`M${tip.x},${tip.y} C${tip.x},${tip.y - 22} ${into.x + l.side * 22},${into.y + 8} ${into.x},${into.y}`} strokeWidth={1.4} />
+                return <path key={`m${l.id}`} className="t-graft" d={limbPath([[tip.x, tip.y], [into.x, into.y]], () => 1.4, false)} />
             })}
 
-            {/* Branches, then the trunk over them. */}
+            {/* Branches, then the trunk over their bases. */}
             {limbs.slice(1).map((l) => {
                 const vis = l.commits.filter(seen)
                 if (!vis.length) return null
                 const base = l.fork && at.has(l.fork) ? at.get(l.fork)! : at.get(l.commits[0]!)!
-                const pts: [number, number][] = [[base.x, base.y], ...vis.map((s) => [at.get(s)!.x, at.get(s)!.y] as [number, number])]
-                const live = l.open || !l.mergeInto || !seen(l.mergeInto)
-                return <Taper key={l.id} points={pts} from={live ? 5 : 4} to={live ? 2 : 1.5} className={live ? 't-limb open' : 't-limb merged'} />
+                const pts: Pt[] = [[base.x, base.y], ...vis.map((s) => [at.get(s)!.x, at.get(s)!.y] as Pt)]
+                const thick = 2.6 + Math.min(l.commits.length, 8) * 0.45
+                return <path key={l.id} className={`t-wood grow ${live(l) ? '' : 'old'}`} d={limbPath(pts, (u) => 1.3 + (thick - 1.3) * (1 - u) ** 0.9, true)} />
             })}
-            <Taper points={trunkPts} from={12} to={3.5} className="t-trunk" />
+            <path className="t-wood grow trunk" d={limbPath(trunkPts, trunkW, false)} />
 
-            {/* One node per commit. */}
+
+            {/* One bud per commit. */}
             {limbs.map((l) => l.commits.filter(seen).map((sha) => {
                 const p = at.get(sha)!
                 const c = bySha.get(sha)!
-                const live = l.id !== 0 && (l.open || !l.mergeInto || !seen(l.mergeInto))
-                const kind = l.id === 0 ? 'trunk' : live ? 'open' : 'merged'
+                const kind = l.id === 0 ? 'trunk' : live(l) ? 'open' : 'merged'
                 return (
                     <g key={sha} className={`t-node ${kind} ${selected === sha ? 'on' : ''} ${who && c.email !== who ? 'dim' : ''}`} onClick={() => onSelect(sha)}>
                         <title>{`${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString('en-ZA')}`}</title>
-                        <circle className="t-halo" cx={p.x} cy={p.y} r={15} />
-                        <circle className="t-dot" cx={p.x} cy={p.y} r={l.id === 0 ? 5 : 4} />
+                        <circle className="t-halo" cx={p.x} cy={p.y} r={16} />
+                        <circle className="t-ring" cx={p.x} cy={p.y} r={10.5} />
+                        <SvgFace id={`face-${sha}`} x={p.x} y={p.y} r={9} name={c.author} email={c.email} github={github(c.email)} />
                         <circle cx={p.x} cy={p.y} r={14} fill="transparent" />
                     </g>
                 )
             }))}
 
-            {/* Name tags at the tip of each branch. */}
-            {limbs.map((l) => {
-                const vis = l.commits.filter(seen)
-                if (!vis.length) return null
-                const tip = at.get(vis.at(-1)!)!
-                const label = tagLabel(l)
-                const w = tagWidth(l)
-                const live = l.id !== 0 && (l.open || !l.mergeInto || !seen(l.mergeInto))
-                const x = l.id === 0 ? tip.x - w / 2 : l.side === 1 ? tip.x + 14 : tip.x - 14 - w
-                const y = l.id === 0 ? tip.y - 40 : tip.y - 11
-                return (
-                    <g key={`tag${l.id}`} className={`t-tag ${l.id === 0 ? 'trunk' : live ? 'open' : 'merged'}`} onClick={() => onSelect(vis.at(-1)!)}>
-                        <title>{l.open || l.id === 0 ? l.name : `${l.name}, merged${l.pr ? ` as ${l.pr}` : ''}`}</title>
-                        <rect x={x} y={y} width={w} height={22} rx={11} />
-                        {l.id !== 0 ? <circle cx={x + 11} cy={y + 11} r={3} /> : null}
-                        <text x={l.id === 0 ? x + w / 2 : x + 19} y={y + 15} textAnchor={l.id === 0 ? 'middle' : 'start'}>{label}</text>
-                    </g>
-                )
+            {/* Labelled links: where merged work joined back. */}
+            {limbs.slice(1).filter((l) => l.mergeInto && at.has(l.mergeInto) && seen(l.mergeInto)).map((l) => {
+                const tip = at.get(l.commits.at(-1)!)!
+                const into = at.get(l.mergeInto!)!
+                return <text key={`ml${l.id}`} className="t-link" x={(tip.x + into.x) / 2 + l.side * 8} y={(tip.y + into.y) / 2 - 4} textAnchor={l.side === 1 ? 'start' : 'end'}>merged{l.pr ? ` ${l.pr}` : ''}</text>
             })}
+
+            {/* The map: an idea card per branch, a label per commit. */}
+            {(() => {
+                const taken: { x: number; y: number; w: number; h: number }[] = []
+                const free = (r: { x: number; y: number; w: number; h: number }) => !taken.some((o) => r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h)
+                for (const l of limbs) for (const sha of l.commits.filter(seen)) { const p = at.get(sha)!; taken.push({ x: p.x - 11, y: p.y - 11, w: 22, h: 22 }) }
+                const out: ReactNode[] = []
+                const tips = new Set<string>()
+                for (const l of limbs) {
+                    const vis = l.commits.filter(seen)
+                    if (!vis.length) continue
+                    const tipSha = vis.at(-1)!
+                    const tip = at.get(tipSha)!
+                    const w = l.id === 0 ? Math.max(120, (t.limbs[0]!.name.length + 6) * 7.4) : tagWidth(l)
+                    const h = 40
+                    const side = l.id === 0 ? 0 : l.side
+                    const x = side === 0 ? tip.x - w / 2 : side === 1 ? tip.x + 22 : tip.x - 22 - w
+                    const y = side === 0 ? tip.y - 70 : tip.y - h / 2
+                    if (l.id !== 0) tips.add(tipSha)
+                    taken.push({ x, y, w, h })
+                    const kind = l.id === 0 ? 'trunk' : live(l) ? 'open' : 'merged'
+                    out.push(
+                        <g key={`card${l.id}`} className={`t-card ${kind}`} onClick={() => onSelect(tipSha)}>
+                            <title>{l.name}</title>
+                            {side !== 0 ? <line className="t-card-link" x1={tip.x + side * 11} y1={tip.y} x2={side === 1 ? x : x + w} y2={tip.y} /> : <line className="t-card-link" x1={tip.x} y1={tip.y - 11} x2={tip.x} y2={y + h} />}
+                            <rect x={x} y={y} width={w} height={h} rx={10} />
+                            {l.id === 0 ? (
+                                <>
+                                    <text className="t-card-title" x={x + w / 2} y={y + 17} textAnchor="middle">{l.name}</text>
+                                    <text className="t-card-sub" x={x + w / 2} y={y + 31} textAnchor="middle">trunk · {l.commits.length} commits</text>
+                                </>
+                            ) : (
+                                <>
+                                    <circle className="t-card-dot" cx={x + 14} cy={y + 13} r={3.2} />
+                                    <text className="t-card-title" x={x + 23} y={y + 18}>{cardTitle(l)}</text>
+                                    <text className="t-card-sub" x={x + 13} y={y + 32}>{cardSub(l)}</text>
+                                </>
+                            )}
+                        </g>,
+                    )
+                }
+                // Commit labels, newest first so recent work wins any tight spot.
+                const order = limbs.flatMap((l) => l.commits.filter(seen).map((sha) => ({ l, sha }))).sort((a, b) => (index.get(b.sha) ?? 0) - (index.get(a.sha) ?? 0))
+                for (const { l, sha } of order) {
+                    if (tips.has(sha)) continue
+                    const p = at.get(sha)!
+                    const text = clip(plain(bySha.get(sha)!.subject), LABEL)
+                    const w = text.length * 6.1
+                    const sides: (1 | -1)[] = l.id === 0 ? [-1, 1] : [l.side]
+                    for (const sd of sides) {
+                        const r = { x: sd === 1 ? p.x + 15 : p.x - 15 - w, y: p.y - 8, w, h: 15 }
+                        if (!free(r)) continue
+                        taken.push(r)
+                        out.push(<text key={`lbl${sha}`} className={`t-label ${who && bySha.get(sha)!.email !== who ? 'dim' : ''} ${selected === sha ? 'on' : ''}`} x={sd === 1 ? p.x + 15 : p.x - 15} y={p.y + 4} textAnchor={sd === 1 ? 'start' : 'end'} onClick={() => onSelect(sha)}>{text}</text>)
+                        break
+                    }
+                }
+                return out
+            })()}
         </svg>
     )
 }
-
-// ---- The agent's plain-words explanation ----
-
-interface Explanation { summary: string; review: string[]; model: string | null }
-
-function Explain({ repo, sha, limb }: { repo: string; sha: string; limb: Limb | undefined })
-{
-    const [busy, setBusy] = useState<'commit' | 'branch' | null>(null)
-    const [result, setResult] = useState<{ what: string; e: Explanation } | null>(null)
-    const [error, setError] = useState<string | null>(null)
-    useEffect(() => { setResult(null); setError(null) }, [sha])
-    const branch = limb && limb.id !== 0 && limb.fork ? limb : null
-    const ask = async (what: 'commit' | 'branch') => {
-        setBusy(what)
-        setError(null)
-        try {
-            const body = what === 'branch' && branch ? { sha: branch.commits.at(-1), base: branch.fork, branch: branch.name } : { sha }
-            const e = await api<Explanation>(`/api/code/explain?repo=${encodeURIComponent(repo)}`, { body })
-            setResult({ what: what === 'branch' && branch ? branch.name : 'this commit', e })
-        } catch (err) {
-            setError((err as Error).message)
-        } finally {
-            setBusy(null)
-        }
-    }
-    return (
-        <div className="explain">
-            <div className="row" style={{ gap: 6 }}>
-                <button className="btn sm ghost-line" disabled={!!busy} onClick={() => ask('commit')}><Icon.spark /> {busy === 'commit' ? 'Reading…' : 'Explain commit'}</button>
-                {branch ? <button className="btn sm ghost-line" disabled={!!busy} onClick={() => ask('branch')}>{busy === 'branch' ? 'Reading the branch…' : 'Explain branch'}</button> : null}
-            </div>
-            {error ? <div className="small" style={{ color: 'var(--critical)', marginTop: 8 }}>{error}</div> : null}
-            {result ? (
-                <div className="explain-card">
-                    <div className="small faint">The agent on {result.what}</div>
-                    <p>{result.e.summary}</p>
-                    {result.e.review.length ? <ul>{result.e.review.map((r) => <li key={r}>{r}</li>)}</ul> : null}
-                    <div className="small faint">{result.e.model ? `Written by ${result.e.model} on Vultr Serverless Inference` : 'Written from the facts, without a model'}</div>
-                </div>
-            ) : null}
-        </div>
-    )
-}
-
 // ---- What changed, and the code as it was ----
 
 function DiffView({ patch, path }: { patch: string; path: string })
@@ -409,28 +444,130 @@ function PreviewFrame({ repo, sha }: { repo: string; sha: string })
         : <div className="preview-empty">Starting the app at this commit…</div>
 }
 
-function Drawer({ repo, sha, t, who, onClose, onWatch, onView, people }: {
-    repo: string; sha: string; t: Grown; who: string | null; onClose: () => void; onWatch: () => void; onView: () => void; people: PersonLite[]
+// ---- The side panel: recent changes in plain words, and the people behind them ----
+
+interface Explanation { summary: string; review: string[]; model: string | null }
+const notesCache = new Map<string, Explanation>()
+
+/** The agent's plain-words note on a commit (or a whole branch), fetched once and kept. */
+function useNotes(repo: string, key: string | null, body: Record<string, unknown> | null)
+{
+    const [state, setState] = useState<{ key: string; e: Explanation | null; error: string | null } | null>(null)
+    useEffect(() => {
+        if (!key || !body) return
+        const k = `${repo}:${key}`
+        const hit = notesCache.get(k)
+        if (hit) { setState({ key, e: hit, error: null }); return }
+        let live = true
+        setState({ key, e: null, error: null })
+        const timer = setTimeout(() => {
+            api<Explanation>(`/api/code/explain?repo=${encodeURIComponent(repo)}`, { body })
+                .then((e) => { notesCache.set(k, e); if (live) setState({ key, e, error: null }) })
+                .catch((err: Error) => live && setState({ key, e: null, error: err.message }))
+        }, 250)
+        return () => { live = false; clearTimeout(timer) }
+    }, [repo, key])
+    return state && state.key === key ? state : null
+}
+
+function Notes({ notes }: { notes: ReturnType<typeof useNotes> })
+{
+    if (!notes || (!notes.e && !notes.error)) return <div className="notes-loading"><i /><i /><i /></div>
+    if (notes.error) return <p className="small faint">Couldn't write a note for this one: {notes.error}</p>
+    const e = notes.e!
+    return (
+        <div className="notes">
+            <p>{e.summary}</p>
+            {e.review.length ? (
+                <>
+                    <div className="notes-label">Worth a look</div>
+                    <ul>{e.review.map((r) => <li key={r}>{r}</li>)}</ul>
+                </>
+            ) : null}
+            <div className="notes-by">{e.model ? `Written by ${e.model} on Vultr` : 'Written from the commit itself'}</div>
+        </div>
+    )
+}
+
+const areaOf = (path: string) => {
+    const parts = path.split('/')
+    return parts.length > 2 ? `${parts[0]}/${parts[1]}` : parts.length === 2 ? parts[0]! : 'the root folder'
+}
+
+function CodeDialog({ repo, sha, detail, onClose }: { repo: string; sha: string; detail: CommitDetail | null; onClose: () => void })
+{
+    const [tab, setTab] = useState<'changes' | 'code'>('changes')
+    const [file, setFile] = useState<string | null>(null)
+    const current = file ?? detail?.files[0]?.path ?? null
+    return (
+        <Dialog title={`Code at ${sha.slice(0, 7)}`} onClose={onClose} wide>
+            <div className="seg">
+                <button className={tab === 'changes' ? 'on' : ''} onClick={() => setTab('changes')}>What changed</button>
+                <button className={tab === 'code' ? 'on' : ''} onClick={() => setTab('code')}>All files at this point</button>
+            </div>
+            {tab === 'changes' && detail ? (
+                <>
+                    <ul className="changed">
+                        {detail.files.map((f) => (
+                            <li key={f.path}>
+                                <button className={f.path === current ? 'on' : ''} onClick={() => setFile(f.path)}>
+                                    <span className="mono ellipsis">{f.path}</span>
+                                    <span className="mono"><span className="add-n">+{f.added ?? '?'}</span> <span className="del-n">−{f.removed ?? '?'}</span></span>
+                                </button>
+                            </li>
+                        ))}
+                    </ul>
+                    {current ? <DiffView patch={detail.patch} path={current} /> : null}
+                </>
+            ) : <CodeAt repo={repo} sha={sha} prefer={current} />}
+        </Dialog>
+    )
+}
+
+function ChangeRow({ c, branch, on, onPick, people }: { c: Commit; branch?: string; on?: boolean; onPick: () => void; people: PersonLite[] })
+{
+    const person = people.find((p) => p.email.toLowerCase() === c.email.toLowerCase())
+    return (
+        <li>
+            <button className={`change-row ${on ? 'on' : ''}`} onClick={onPick}>
+                <Avatar name={c.author} email={c.email} github={person?.github} size={24} />
+                <span className="change-text">
+                    <span className="ellipsis">{plain(c.subject)}</span>
+                    <span className="small faint ellipsis">{branch ? <><span className="mono">{branch}</span> · </> : null}{c.author.split(' ')[0]} · {ago(c.date)}</span>
+                </span>
+            </button>
+        </li>
+    )
+}
+
+function CommitView({ repo, sha, t, people, onSelect, onBack, onWatch, onView }: {
+    repo: string; sha: string; t: Grown; people: PersonLite[]; onSelect: (s: string) => void; onBack: () => void; onWatch: () => void; onView: () => void
 })
 {
     const detail = useApi<CommitDetail>(`/api/code/commit?repo=${encodeURIComponent(repo)}&sha=${sha}`)
-    const [tab, setTab] = useState<'changes' | 'code'>('changes')
-    const [file, setFile] = useState<string | null>(null)
-    useEffect(() => setFile(null), [sha])
-    const d = detail.data?.commit.sha === sha ? detail.data : detail.data && !detail.loading ? detail.data : null
+    const d = detail.data?.commit.sha === sha ? detail.data : null
     const limb = t.limbs[t.at.get(sha)?.limb ?? -1]
     const c = t.bySha.get(sha)
     const person = people.find((p) => p.email.toLowerCase() === c?.email.toLowerCase())
-    const current = file ?? d?.files[0]?.path ?? null
-    void who
+    const notes = useNotes(repo, sha, { sha })
+    const branch = limb && limb.id !== 0 && limb.fork ? limb : null
+    const [askBranch, setAskBranch] = useState(false)
+    useEffect(() => setAskBranch(false), [branch?.id])
+    const branchNotes = useNotes(repo, askBranch && branch ? `branch:${branch.name}:${branch.commits.at(-1)}` : null, branch ? { sha: branch.commits.at(-1), base: branch.fork, branch: branch.name } : null)
+    const [code, setCode] = useState(false)
+    const areas = d ? [...new Set(d.files.map((f) => areaOf(f.path)))] : []
+    const added = d ? d.files.reduce((n, f) => n + (f.added ?? 0), 0) : 0
+    const removed = d ? d.files.reduce((n, f) => n + (f.removed ?? 0), 0) : 0
+    const recent = limb ? [...limb.commits].reverse().slice(0, 6).map((s) => t.bySha.get(s)!) : []
+
     return (
-        <aside className="tree-drawer" aria-label="Commit">
-            <div className="drawer-head">
-                <div className="row" style={{ gap: 8 }}>
-                    {limb ? <Pill tone={limb.id === 0 ? 'accent' : limb.open ? 'good' : 'neutral'}>{limb.name}{limb.id !== 0 && !limb.open ? ' · merged' : ''}</Pill> : null}
-                    <span className="mono faint">{sha.slice(0, 7)}</span>
-                    <button className="btn ghost sm icon-only" style={{ marginLeft: 'auto' }} onClick={onClose} aria-label="Close"><Icon.x /></button>
+        <>
+            <div className="panel-head">
+                <div className="row" style={{ gap: 8, flexWrap: 'nowrap' }}>
+                    <button className="btn ghost sm back" onClick={onBack}><Icon.back /> Overview</button>
+                    <span className="mono faint small" style={{ marginLeft: 'auto' }}>{sha.slice(0, 7)}</span>
                 </div>
+                {limb ? <div style={{ marginTop: 12 }}><Pill tone={limb.id === 0 ? 'accent' : limb.open ? 'good' : 'neutral'}>{limb.name}{limb.id !== 0 && !limb.open ? ' · merged' : ''}</Pill></div> : null}
                 <h2>{c?.subject}</h2>
                 {c ? (
                     <div className="drawer-who">
@@ -443,36 +580,181 @@ function Drawer({ repo, sha, t, who, onClose, onWatch, onView, people }: {
                     <button className="btn primary sm" onClick={onView}><Icon.eye /> View app</button>
                     <button className="btn sm" onClick={onWatch}><Icon.play /> Watch it grow</button>
                 </div>
-                {d?.commit.body ? <p className="small muted" style={{ marginTop: 10, whiteSpace: 'pre-wrap' }}>{d.commit.body}</p> : null}
-                <Explain repo={repo} sha={sha} limb={limb} />
             </div>
-            {d ? (
-                <div className="drawer-body">
-                    <div className="seg">
-                        <button className={tab === 'changes' ? 'on' : ''} onClick={() => setTab('changes')}>Changes <span className="faint">{d.files.length}</span></button>
-                        <button className={tab === 'code' ? 'on' : ''} onClick={() => setTab('code')}>Code at this point</button>
+
+            <section className="panel-section">
+                <h3>What changed</h3>
+                <Notes notes={notes} />
+                {d ? (
+                    <div className="change-facts">
+                        <span><b>{d.files.length}</b> {d.files.length === 1 ? 'file' : 'files'}</span>
+                        <span className="add-n">+{added}</span>
+                        <span className="del-n">−{removed}</span>
+                        <span className="faint ellipsis">in {areas.slice(0, 3).join(', ')}{areas.length > 3 ? ` and ${areas.length - 3} more` : ''}</span>
                     </div>
-                    {tab === 'changes' ? (
-                        <>
-                            <ul className="changed">
-                                {d.files.map((f) => (
-                                    <li key={f.path}>
-                                        <button className={f.path === current ? 'on' : ''} onClick={() => setFile(f.path)}>
-                                            <span className="mono ellipsis">{f.path}</span>
-                                            <span className="mono"><span className="add-n">+{f.added ?? '?'}</span> <span className="del-n">−{f.removed ?? '?'}</span></span>
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
-                            {current ? <DiffView patch={d.patch} path={current} /> : <div className="empty small">This commit changed no files.</div>}
-                        </>
-                    ) : <CodeAt repo={repo} sha={sha} prefer={current} />}
-                </div>
-            ) : <div className="empty small">{detail.error ?? 'Reading the commit…'}</div>}
-        </aside>
+                ) : null}
+                <button className="link-btn" onClick={() => setCode(true)}>Code at this point →</button>
+            </section>
+
+            <AskAgent repo={repo} sha={sha} scope="this commit" />
+
+            {branch ? (
+                <section className="panel-section">
+                    <h3>The branch so far</h3>
+                    {askBranch ? <Notes notes={branchNotes} /> : <button className="btn sm" onClick={() => setAskBranch(true)}><Icon.spark /> Explain branch</button>}
+                </section>
+            ) : null}
+
+            {recent.length > 1 ? (
+                <section className="panel-section">
+                    <h3>Recent on {limb ? (limb.id === 0 ? limb.name : human(limb.name).toLowerCase()) : 'this branch'}</h3>
+                    <ul className="changes">
+                        {recent.map((r) => <ChangeRow key={r.sha} c={r} on={r.sha === sha} onPick={() => onSelect(r.sha)} people={people} />)}
+                    </ul>
+                </section>
+            ) : null}
+            {code ? <CodeDialog repo={repo} sha={sha} detail={d} onClose={() => setCode(false)} /> : null}
+        </>
     )
 }
 
+// ---- Ask the agent: an OpenAI-compatible model that reads the code at this point ----
+
+interface Turn { role: 'user' | 'assistant'; content: string; model?: string | null }
+
+function AskAgent({ repo, sha, scope }: { repo: string; sha: string; scope: string })
+{
+    const [turns, setTurns] = useState<Turn[]>([])
+    const [q, setQ] = useState('')
+    const [busy, setBusy] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const end = useRef<HTMLDivElement>(null)
+    useEffect(() => { setTurns([]); setError(null) }, [sha])
+    useEffect(() => { end.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }) }, [turns, busy])
+    const ask = async (question: string) => {
+        const text = question.trim()
+        if (!text || busy) return
+        const history = turns.map(({ role, content }) => ({ role, content }))
+        setTurns((ts) => [...ts, { role: 'user', content: text }])
+        setQ('')
+        setBusy(true)
+        setError(null)
+        try {
+            const r = await api<{ answer: string; model: string | null }>(`/api/code/ask?repo=${encodeURIComponent(repo)}`, { body: { sha, question: text, history } })
+            setTurns((ts) => [...ts, { role: 'assistant', content: r.answer, model: r.model }])
+        } catch (e) {
+            const status = (e as { status?: number }).status
+            setError(status === 404 ? "The agent isn't connected on this server yet." : (e as Error).message)
+        } finally {
+            setBusy(false)
+        }
+    }
+    const starters = ['What does this do, in plain words?', 'Anything risky here?', 'How should we test it?']
+    return (
+        <section className="panel-section ask">
+            <h3>Ask the agent</h3>
+            {turns.length ? (
+                <div className="ask-thread">
+                    {turns.map((t, i) => (
+                        <div key={i} className={`ask-turn ${t.role}`}>
+                            {t.role === 'assistant' ? <span className="ask-mark"><Icon.spark /></span> : null}
+                            <div>
+                                <p>{t.content}</p>
+                                {t.role === 'assistant' ? <div className="notes-by">{t.model ? `${t.model}, OpenAI-compatible, on Vultr` : 'Answered from the facts, no model connected'}</div> : null}
+                            </div>
+                        </div>
+                    ))}
+                    {busy ? <div className="ask-turn assistant"><span className="ask-mark"><Icon.spark /></span><div className="notes-loading" style={{ flex: 1 }}><i /><i /></div></div> : null}
+                    <div ref={end} />
+                </div>
+            ) : (
+                <div className="ask-starters">
+                    {starters.map((s) => <button key={s} className="chip" onClick={() => void ask(s)} disabled={busy}>{s}</button>)}
+                </div>
+            )}
+            {error ? <p className="small" style={{ color: 'var(--critical)', marginTop: 8 }}>{error}</p> : null}
+            <form className="ask-box" onSubmit={(e) => { e.preventDefault(); void ask(q) }}>
+                <input className="input" placeholder={`Ask about ${scope}…`} value={q} onChange={(e) => setQ(e.target.value)} aria-label="Ask the agent" />
+                <button className="btn primary sm icon-only round" disabled={busy || !q.trim()} aria-label="Send"><Icon.up /></button>
+            </form>
+        </section>
+    )
+}
+
+function Overview({ repo, t, project, people, onSelect }: { repo: string; t: Grown; project: RepoRow | undefined; people: PersonLite[]; onSelect: (s: string) => void })
+{
+    const recent = [...t.asc].reverse().slice(0, 8)
+    const week = t.asc.filter((c) => Date.now() - new Date(c.date).getTime() < 7 * 86_400_000)
+    const weekPeople = new Set(week.map((c) => c.email)).size
+    const weekBranches = new Set(week.map((c) => t.at.get(c.sha)?.limb)).size
+    const live = t.limbs.filter((l) => l.id !== 0 && l.open)
+    return (
+        <>
+            <div className="panel-head">
+                <div className="small faint">{project?.client || 'Project'}</div>
+                <h2 style={{ marginTop: 4 }}>{project?.project ?? t.limbs[0]?.name}</h2>
+                <p className="panel-lede">
+                    {week.length
+                        ? `${week.length} ${week.length === 1 ? 'change' : 'changes'} this week by ${weekPeople} ${weekPeople === 1 ? 'person' : 'people'} across ${weekBranches} ${weekBranches === 1 ? 'branch' : 'branches'}.`
+                        : `Quiet this week. The last change was ${ago(recent[0]!.date)}.`}
+                    {live.length ? ` ${live.length} ${live.length === 1 ? 'branch is' : 'branches are'} still growing.` : ' Everything is merged.'}
+                </p>
+                {project?.reasons?.length ? <div className={`panel-flag ${project.health}`}><span className={`health ${project.health}`} />{project.reasons.join(' · ')}</div> : null}
+            </div>
+            <section className="panel-section">
+                <h3>Recent changes</h3>
+                <ul className="changes">
+                    {recent.map((c) => <ChangeRow key={c.sha} c={c} branch={short(t.limbs[t.at.get(c.sha)?.limb ?? 0]?.name ?? '')} onPick={() => onSelect(c.sha)} people={people} />)}
+                </ul>
+                <p className="small faint" style={{ marginTop: 10 }}>Tap any change, or any face on the tree, to read what it did.</p>
+            </section>
+            <AskAgent repo={repo} sha={t.limbs[0]!.commits.at(-1)!} scope={`${project?.project ?? 'this project'} as it is now`} />
+        </>
+    )
+}
+
+function Contributors({ commits, who, onPick, people }: { commits: Commit[]; who: string | null; onPick: (email: string | null) => void; people: PersonLite[] })
+{
+    const [all, setAll] = useState(false)
+    const list = useMemo(() => {
+        const by = new Map<string, { name: string; email: string; count: number; last: string }>()
+        for (const c of commits) {
+            const p = by.get(c.email) ?? { name: c.author, email: c.email, count: 0, last: c.date }
+            p.count++
+            if (c.date > p.last) p.last = c.date
+            by.set(c.email, p)
+        }
+        return [...by.values()].sort((a, b) => b.count - a.count)
+    }, [commits])
+    const find = (email: string) => people.find((p) => p.email.toLowerCase() === email.toLowerCase())
+    const shown = all ? list : list.slice(0, 5)
+    return (
+        <section className="panel-people">
+            <div className="spread">
+                <h3>Contributors <span className="faint">{list.length}</span></h3>
+                {who ? <button className="link-btn" onClick={() => onPick(null)}>Show everyone</button> : null}
+            </div>
+            <ul>
+                {shown.map((p) => {
+                    const person = find(p.email)
+                    return (
+                        <li key={p.email} className={`${who === p.email ? 'on' : ''} ${who && who !== p.email ? 'dim' : ''}`}>
+                            <button className="person-row" onClick={() => onPick(who === p.email ? null : p.email)} aria-pressed={who === p.email} title="Light up their work on the tree">
+                                <Avatar name={p.name} email={p.email} github={person?.github} size={32} />
+                                <span className="change-text">
+                                    <b className="ellipsis">{p.name}</b>
+                                    <span className="small faint">{p.count} {p.count === 1 ? 'commit' : 'commits'} · last {ago(p.last)}</span>
+                                </span>
+                            </button>
+                            {person ? <Link className="profile-arrow" to={`/team/${person.id}`} aria-label={`${p.name}'s profile`} title="Profile"><Icon.chev /></Link> : null}
+                        </li>
+                    )
+                })}
+            </ul>
+            {list.length > 5 ? <button className="link-btn" onClick={() => setAll((a) => !a)}>{all ? 'Show fewer' : `Show all ${list.length}`}</button> : null}
+        </section>
+    )
+}
 // ---- Playback: watch the code grow, commit by commit ----
 
 interface Playback { seq: string[]; pos: number; playing: boolean; label: string }
@@ -534,48 +816,89 @@ function Viewer({ repo, t, seq, start, label, onClose }: { repo: string; t: Grow
     )
 }
 
-// ---- Who grew this tree ----
+// ---- Plant from GitHub: solo or a team, anyone's public repos become trees ----
 
-function Contributors({ commits, who, onPick, people }: { commits: Commit[]; who: string | null; onPick: (email: string | null) => void; people: PersonLite[] })
+interface GhRepo { full_name: string; description: string | null; language: string | null; pushed_at: string; fork: boolean; stargazers_count: number }
+
+function GitHubPlanter({ planted, onPlanted }: { planted: string[]; onPlanted: (repo: string) => void })
 {
-    const list = useMemo(() => {
-        const by = new Map<string, { name: string; email: string; count: number; last: string }>()
-        for (const c of commits) {
-            const p = by.get(c.email) ?? { name: c.author, email: c.email, count: 0, last: c.date }
-            p.count++
-            if (c.date > p.last) p.last = c.date
-            by.set(c.email, p)
+    const { me, toast } = useStudio()
+    const [user, setUser] = useState(me.githubLogin ?? '')
+    const [list, setList] = useState<GhRepo[] | null>(null)
+    const [loading, setLoading] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const [busy, setBusy] = useState<string | null>(null)
+    const [manual, setManual] = useState('')
+    const have = new Set(planted.map((r) => r.toLowerCase()))
+
+    const load = async (u: string) => {
+        const login = u.trim().replace(/^@/, '').replace(/^https?:\/\/github\.com\//i, '').replace(/\/.*$/, '')
+        if (!login) return
+        setLoading(true)
+        setError(null)
+        try {
+            const res = await fetch(`https://api.github.com/users/${encodeURIComponent(login)}/repos?sort=pushed&per_page=40`)
+            if (res.status === 404) throw new Error(`There's no GitHub account called ${login}.`)
+            if (!res.ok) throw new Error('GitHub did not answer just now. Try again in a minute.')
+            setList(((await res.json()) as GhRepo[]).filter((r) => !r.fork))
+            // Remember it, so their face shows on their commits.
+            if (login !== me.githubLogin) void api('/api/me', { method: 'PATCH', body: { githubLogin: login } }).then(announceChange).catch(() => {})
+        } catch (e) {
+            setError((e as Error).message)
+            setList(null)
+        } finally {
+            setLoading(false)
         }
-        return [...by.values()].sort((a, b) => b.count - a.count)
-    }, [commits])
-    const MAX = 9
-    const find = (email: string) => people.find((p) => p.email.toLowerCase() === email.toLowerCase())
+    }
+    useEffect(() => { if (me.githubLogin) void load(me.githubLogin) }, [])
+
+    const plant = async (repo: string) => {
+        setBusy(repo)
+        try {
+            const r = await api<{ repo: string }>('/api/code/plant', { body: { repo } })
+            announceChange()
+            onPlanted(r.repo)
+        } catch (e) {
+            toast((e as Error).message, true)
+        } finally {
+            setBusy(null)
+        }
+    }
+
+    if (me.role !== 'manager') return <p className="muted">Ask whoever runs your space to plant a repo. Then it grows here for the whole team.</p>
     return (
-        <div className="dock">
-            <span className="dock-label">{list.length} {list.length === 1 ? 'contributor' : 'contributors'}</span>
-            <div className="av-stack">
-                {list.slice(0, MAX).map((p) => {
-                    const person = find(p.email)
-                    return (
-                        <div key={p.email} className={`av-item ${who === p.email ? 'on' : ''} ${who && who !== p.email ? 'dim' : ''}`}>
-                            <button onClick={() => onPick(who === p.email ? null : p.email)} aria-pressed={who === p.email} aria-label={`Show ${p.name}'s commits`}>
-                                <Avatar name={p.name} email={p.email} github={person?.github} size={34} ring />
-                            </button>
-                            <div className="av-card" role="tooltip">
-                                <Avatar name={p.name} email={p.email} github={person?.github} size={44} />
-                                <div>
-                                    <b>{p.name}</b>
-                                    <div className="small faint">{realLogin(person?.github, p.email) ? `@${person!.github}` : p.email}</div>
-                                    <div className="small">{p.count} {p.count === 1 ? 'commit' : 'commits'} here · last {ago(p.last)}</div>
-                                    {person ? <Link className="small" to={`/team/${person.id}`}>View profile →</Link> : null}
-                                </div>
-                            </div>
-                        </div>
-                    )
-                })}
-                {list.length > MAX ? <span className="av-more">+{list.length - MAX}</span> : null}
-            </div>
-            {who ? <button className="btn ghost sm" onClick={() => onPick(null)}>Show everyone</button> : null}
+        <div className="planter">
+            <form className="planter-row" onSubmit={(e) => { e.preventDefault(); void load(user) }}>
+                <span className="planter-gh"><Icon.github /></span>
+                <input className="input" placeholder="Your GitHub username" value={user} onChange={(e) => setUser(e.target.value)} aria-label="GitHub username" />
+                <button className="btn primary" disabled={loading || !user.trim()}>{loading ? 'Looking…' : 'Show my repos'}</button>
+            </form>
+            {error ? <p className="small" style={{ color: 'var(--critical)' }}>{error}</p> : null}
+            {list ? (
+                list.length ? (
+                    <ul className="planter-list">
+                        {list.map((r) => {
+                            const done = have.has(r.full_name.toLowerCase())
+                            return (
+                                <li key={r.full_name}>
+                                    <div className="grow">
+                                        <b className="mono">{r.full_name}</b>
+                                        <span className="small faint ellipsis">{[r.language, r.description, `pushed ${ago(r.pushed_at)}`].filter(Boolean).join(' · ')}</span>
+                                    </div>
+                                    {done
+                                        ? <button className="btn sm" onClick={() => onPlanted(r.full_name)}>Open tree</button>
+                                        : <button className="btn sm primary" disabled={!!busy} onClick={() => void plant(r.full_name)}>{busy === r.full_name ? 'Planting…' : 'Plant'}</button>}
+                                </li>
+                            )
+                        })}
+                    </ul>
+                ) : <p className="small faint">No public repos on that account yet.</p>
+            ) : null}
+            <form className="planter-row manual" onSubmit={(e) => { e.preventDefault(); if (manual.trim()) void plant(manual.trim()) }}>
+                <input className="input" placeholder="Or paste any public repo: owner/name or a GitHub link" value={manual} onChange={(e) => setManual(e.target.value)} />
+                <button className="btn" disabled={!!busy || !manual.trim()}>Plant</button>
+            </form>
+            <p className="small faint">Public repos only for now. Everyone in your space sees the trees you plant, so it works the same solo or as a team.</p>
         </div>
     )
 }
@@ -586,8 +909,7 @@ function Switcher({ repos, repo, onPick }: { repos: RepoRow[]; repo: string | nu
 {
     const { me, toast } = useStudio()
     const [open, setOpen] = useState(false)
-    const [plant, setPlant] = useState('')
-    const [busy, setBusy] = useState(false)
+    const [planting, setPlanting] = useState(false)
     const ref = useRef<HTMLDivElement>(null)
     useEffect(() => {
         if (!open) return
@@ -598,20 +920,6 @@ function Switcher({ repos, repo, onPick }: { repos: RepoRow[]; repo: string | nu
         return () => { window.removeEventListener('mousedown', off); window.removeEventListener('keydown', esc) }
     }, [open])
     const cur = repos.find((r) => r.repo === repo)
-    const doPlant = async () => {
-        if (!plant.trim()) return
-        setBusy(true)
-        try {
-            const r = await api<{ repo: string }>('/api/code/plant', { body: { repo: plant.trim() } })
-            setPlant('')
-            setOpen(false)
-            onPick(r.repo)
-        } catch (e) {
-            toast((e as Error).message, true)
-        } finally {
-            setBusy(false)
-        }
-    }
     return (
         <div className="switcher" ref={ref}>
             <button className="switcher-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="listbox">
@@ -633,15 +941,16 @@ function Switcher({ repos, repo, onPick }: { repos: RepoRow[]; repo: string | nu
                         </button>
                     ))}
                     {me.role === 'manager' ? (
-                        <form className="plant" onSubmit={(e) => { e.preventDefault(); void doPlant() }}>
-                            <div className="menu-label">Plant a repo</div>
-                            <div className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
-                                <input className="input" placeholder="owner/name or GitHub URL" value={plant} onChange={(e) => setPlant(e.target.value)} />
-                                <button className="btn sm" disabled={busy || !plant.trim()}>{busy ? 'Planting…' : 'Plant'}</button>
-                            </div>
-                        </form>
+                        <div className="plant">
+                            <button className="btn sm block-left" onClick={() => { setOpen(false); setPlanting(true) }}><Icon.github /> Plant from GitHub…</button>
+                        </div>
                     ) : null}
                 </div>
+            ) : null}
+            {planting ? (
+                <Dialog title="Plant a tree from GitHub" onClose={() => setPlanting(false)} wide>
+                    <GitHubPlanter planted={repos.map((r) => r.repo)} onPlanted={(r) => { setPlanting(false); onPick(r) }} />
+                </Dialog>
             ) : null}
         </div>
     )
@@ -709,15 +1018,22 @@ export function CodeTree()
 
     let body: ReactNode = null
     if (list.data && !list.data.enabled) body = <Hint title="The code tree is off">The server needs git installed to keep repos on its disk.</Hint>
-    else if (list.data && !repos.length) body = <Hint title="Plant your first tree">Open the project menu above and plant a GitHub repo, or link one to a project.</Hint>
+    else if (list.data && !repos.length) body = (
+        <div className="tree-hint plant-first">
+            <Icon.tree />
+            <strong>Plant your first tree</strong>
+            <span>Connect your GitHub and pick a repo. Every commit becomes part of a living tree you can watch grow.</span>
+            <div className="plant-card"><GitHubPlanter planted={[]} onPlanted={pick} /></div>
+        </div>
+    )
     else if (repo && graph.error) body = <Hint title="Could not read this repo">{graph.error}</Hint>
     else if (graph.data && !graph.data.commits.length) body = <Hint title="No commits yet">Push a first commit and the tree starts growing.</Hint>
     else if (!t) body = <Hint title="Growing the tree…" />
 
     return (
-        <div className={`tree-page ${shown ? 'has-drawer' : ''}`}>
+        <div className={`tree-page ${t ? 'has-drawer' : ''} ${shown ? 'picked' : ''}`}>
             <div className="tree-canvas" ref={setBox}>
-                {t && graph.data ? <Tree g={graph.data} t={t} upto={upto} selected={shown} onSelect={(s) => { setPb(null); setSelected(s) }} who={who} box={box} /> : null}
+                {t && graph.data ? <Tree g={graph.data} t={t} upto={upto} selected={shown} onSelect={(s) => { setPb(null); setSelected(s) }} who={who} box={box} people={people} /> : null}
             </div>
             {body}
 
@@ -738,33 +1054,38 @@ export function CodeTree()
                 </div>
             </header>
 
-            {graph.data && t ? (
+            {graph.data && t && pb ? (
                 <footer className="tree-bottom">
-                    {pb ? (
-                        <Scrubber
-                            pb={pb}
-                            t={t}
-                            onPos={(n) => setPb((p) => p && { ...p, pos: n, playing: false })}
-                            onPlay={(v) => setPb((p) => p && { ...p, playing: v, pos: v && p.pos >= p.seq.length - 1 ? 0 : p.pos })}
-                            onClose={() => { if (pb.label !== 'Whole history') setSelected(pb.seq[pb.pos]!); setPb(null) }}
-                            onView={() => { setView({ seq: pb.seq, start: pb.pos, label: pb.label }); setPb((p) => p && { ...p, playing: false }) }}
-                        />
-                    ) : <Contributors commits={graph.data.commits} who={who} onPick={setWho} people={people} />}
+                    <Scrubber
+                        pb={pb}
+                        t={t}
+                        onPos={(n) => setPb((p) => p && { ...p, pos: n, playing: false })}
+                        onPlay={(v) => setPb((p) => p && { ...p, playing: v, pos: v && p.pos >= p.seq.length - 1 ? 0 : p.pos })}
+                        onClose={() => { if (pb.label !== 'Whole history') setSelected(pb.seq[pb.pos]!); setPb(null) }}
+                        onView={() => { setView({ seq: pb.seq, start: pb.pos, label: pb.label }); setPb((p) => p && { ...p, playing: false }) }}
+                    />
                 </footer>
             ) : null}
 
-            {shown && repo && t ? (
-                <Drawer
-                    key={repo}
-                    repo={repo}
-                    sha={shown}
-                    t={t}
-                    who={who}
-                    people={people}
-                    onClose={() => { setSelected(null); setPb(null) }}
-                    onWatch={() => watch(shown)}
-                    onView={() => openView(shown)}
-                />
+            {repo && t && graph.data ? (
+                <aside className={`tree-drawer panel ${shown ? 'has-commit' : ''}`} aria-label="Changes and people">
+                    <div className="panel-scroll">
+                        {shown ? (
+                            <CommitView
+                                key={repo}
+                                repo={repo}
+                                sha={shown}
+                                t={t}
+                                people={people}
+                                onSelect={(s) => { setPb(null); setSelected(s) }}
+                                onBack={() => { setSelected(null); setPb(null) }}
+                                onWatch={() => watch(shown)}
+                                onView={() => openView(shown)}
+                            />
+                        ) : <Overview repo={repo} t={t} project={project} people={people} onSelect={(s) => setSelected(s)} />}
+                    </div>
+                    <Contributors commits={graph.data.commits} who={who} onPick={setWho} people={people} />
+                </aside>
             ) : null}
 
             {view && repo && t ? <Viewer repo={repo} t={t} seq={view.seq} start={view.start} label={view.label} onClose={() => setView(null)} /> : null}

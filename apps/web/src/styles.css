@@ -720,3 +720,159 @@ ul.plain li > .small.faint:last-child { margin-left: auto; white-space: nowrap; 
     .tree-tools { margin-left: 0; }
     .tree-tools .btn:not(.icon-only) { font-size: 0; gap: 0; width: 34px; padding: 0; justify-content: center; }
 }
+
+/* ---- Round 2: a living tree that reads like a concept map ---- */
+.tree-page {
+    --bark-a: #4f4237; --bark-b: #75624f;
+    --leaf-0: #7fa178; --leaf-1: #9cb991; --leaf-2: #66906a; --leaf-o: #c4c8b8;
+    --card: var(--surface);
+}
+@media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .tree-page { --bark-a: #6f6152; --bark-b: #9a8670; --leaf-0: #456b4b; --leaf-1: #3a5c40; --leaf-2: #5a835f; --leaf-o: #3a3d36; }
+}
+:root[data-theme='dark'] .tree-page { --bark-a: #6f6152; --bark-b: #9a8670; --leaf-0: #456b4b; --leaf-1: #3a5c40; --leaf-2: #5a835f; --leaf-o: #3a3d36; }
+.bark-a { stop-color: var(--bark-a); }
+.bark-b { stop-color: var(--bark-b); }
+.shadow-stop { stop-color: var(--ink); }
+.t-wood { fill: var(--bark-a); }
+.t-wood.old { fill: color-mix(in oklab, var(--bark-a) 55%, var(--bg)); }
+.t-wood.grow { animation: t-fade .5s ease-out both; }
+.t-graft { fill: color-mix(in oklab, var(--bark-a) 40%, var(--bg)); }
+.foliage { opacity: .5; }
+.foliage.old { opacity: .55; }
+.leaf { transform-box: fill-box; transform-origin: center; animation: t-pop .5s cubic-bezier(.2,1.2,.4,1) both; }
+.leaf.l0 { fill: var(--leaf-0); }
+.leaf.l1 { fill: var(--leaf-1); }
+.leaf.l2 { fill: var(--leaf-2); }
+.leaf.lo { fill: var(--leaf-o); }
+.t-node .t-dot { fill: var(--surface); stroke: var(--bark-a); stroke-width: 1.6; }
+.t-node.trunk .t-dot { fill: var(--surface); stroke: var(--bark-a); stroke-width: 2; }
+.t-node.open .t-dot { stroke: var(--accent); stroke-width: 2; }
+.t-node.on .t-dot { fill: var(--accent); stroke: var(--surface); }
+
+.t-label { font-size: 11px; fill: var(--ink-2); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; cursor: pointer; animation: t-fade .4s ease-out both; }
+.t-label:hover, .t-label.on { fill: var(--ink); font-weight: 600; }
+.t-label.dim { opacity: .2; }
+.t-link { font-size: 10.5px; font-style: italic; fill: var(--ink-3); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
+.t-card { cursor: pointer; animation: t-fade .45s ease-out both; }
+.t-card rect { fill: var(--card); stroke: var(--line-strong); filter: drop-shadow(0 1px 2px rgb(0 0 0 / .05)); }
+.t-card:hover rect { stroke: var(--accent); }
+.t-card.open rect { stroke: color-mix(in oklab, var(--accent) 55%, var(--line)); }
+.t-card.trunk rect { fill: var(--ink); stroke: var(--ink); }
+.t-card.trunk .t-card-title { fill: var(--bg); }
+.t-card.trunk .t-card-sub { fill: color-mix(in oklab, var(--bg) 70%, var(--ink)); }
+.t-card-title { font-size: 12.5px; font-weight: 600; fill: var(--ink); }
+.t-card-sub { font-size: 10.5px; fill: var(--ink-3); }
+.t-card-dot { fill: var(--accent); }
+.t-card.merged .t-card-dot { fill: var(--ink-3); }
+.t-card.merged .t-card-title { fill: var(--ink-2); }
+.t-card-link { stroke: var(--line-strong); stroke-width: 1; stroke-dasharray: 2 3; }
+
+/* The panel: always there, plain words first, people at the bottom */
+.tree-drawer.panel { display: flex; flex-direction: column; overflow: hidden; animation: none; }
+.panel-scroll { flex: 1; overflow: auto; min-height: 0; }
+.panel-head { padding: 20px 22px 18px; border-bottom: 1px solid var(--line); }
+.panel-head h2 { font-size: 20px; font-weight: 600; line-height: 1.3; margin: 10px 0 8px; letter-spacing: -.015em; }
+.panel-head .btn.back { padding: 0 8px 0 4px; margin-left: -6px; color: var(--ink-2); }
+.panel-head .btn.back svg { width: 15px; height: 15px; }
+.panel-lede { color: var(--ink-2); line-height: 1.55; font-size: 14px; }
+.panel-flag { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 8px 12px; border-radius: 9px; font-size: 13px; background: var(--surface-2); border: 1px solid var(--line); }
+.panel-flag.attention { background: var(--critical-soft); border-color: transparent; }
+.panel-flag.watch { background: var(--warning-soft); border-color: transparent; }
+.panel-section { padding: 18px 22px; border-bottom: 1px solid var(--line); }
+.panel-section:last-child { border-bottom: 0; }
+.panel-section h3, .panel-people h3 { font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+.notes p { font-size: 14.5px; line-height: 1.6; color: var(--ink); }
+.notes-label { font-size: 12px; font-weight: 600; color: var(--ink-2); margin: 12px 0 4px; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 4px; }
+.notes li { font-size: 13.5px; line-height: 1.5; color: var(--ink-2); }
+.notes-by { font-size: 11.5px; color: var(--ink-3); margin-top: 10px; }
+.notes-loading { display: grid; gap: 8px; }
+.notes-loading i { height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--sunken), var(--surface-2), var(--sunken)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+.notes-loading i:nth-child(2) { width: 85%; } .notes-loading i:nth-child(3) { width: 60%; }
+@keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.change-facts { display: flex; align-items: baseline; gap: 10px; margin-top: 14px; font-size: 13px; color: var(--ink-2); min-width: 0; }
+.change-facts b { color: var(--ink); }
+.link-btn { border: 0; background: none; padding: 0; margin-top: 12px; color: var(--accent); font-weight: 600; font-size: 13px; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
+.changes { list-style: none; margin: 0 -10px; padding: 0; display: grid; gap: 1px; }
+.change-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; background: none; border-radius: 9px; cursor: pointer; text-align: left; color: var(--ink); }
+.change-row:hover { background: var(--sunken); }
+.change-row.on { background: var(--accent-soft); }
+.change-text { display: grid; min-width: 0; flex: 1; line-height: 1.35; font-size: 13.5px; }
+.panel-people { border-top: 1px solid var(--line); padding: 14px 22px 16px; background: var(--surface-2); max-height: 42%; overflow: auto; flex: none; }
+.panel-people h3 { margin-bottom: 8px; }
+.panel-people .link-btn { margin-top: 6px; }
+.panel-people ul { list-style: none; margin: 0 -8px; padding: 0; display: grid; gap: 2px; }
+.panel-people li { display: flex; align-items: center; border-radius: 10px; transition: opacity .15s; }
+.panel-people li:hover { background: var(--sunken); }
+.panel-people li.on { background: var(--accent-soft); }
+.panel-people li.on .av { box-shadow: 0 0 0 2px var(--surface-2), 0 0 0 4px var(--accent); }
+.panel-people li.dim { opacity: .5; }
+.person-row { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 7px 8px; border: 0; background: none; cursor: pointer; text-align: left; color: var(--ink); }
+.person-row b { font-weight: 600; font-size: 13.5px; }
+.profile-arrow { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--ink-3); margin-right: 4px; }
+.profile-arrow:hover { color: var(--accent); background: var(--surface); }
+.profile-arrow svg { width: 14px; height: 14px; }
+.dialog.wide .seg { margin-bottom: 14px; }
+@media (max-width: 760px) {
+    .tree-drawer.panel:not(.has-commit) { display: none; }
+    .tree-page .tree-canvas, .tree-page.has-drawer .tree-canvas { right: 0; }
+}
+.canopy { opacity: .3; }
+.canopy .leaf { fill: var(--leaf-0); }
+.canopy.old { opacity: .45; }
+.canopy.old .leaf { fill: var(--leaf-o); }
+.t-label { stroke: color-mix(in oklab, var(--bg) 75%, transparent); }
+
+/* ---- Round 3: line art in the page's turquoise, with faces on every commit ---- */
+.t-wood, .t-wood.trunk { fill: var(--accent); }
+.t-wood.old { fill: color-mix(in oklab, var(--accent) 38%, var(--bg)); }
+.t-graft { fill: color-mix(in oklab, var(--accent) 32%, var(--bg)); }
+.ground-stop { stop-color: color-mix(in oklab, var(--accent) 60%, var(--bg)); }
+.t-ring { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.t-node.merged .t-ring { stroke: color-mix(in oklab, var(--accent) 38%, var(--bg)); }
+.t-node:hover .t-ring { stroke-width: 3; }
+.t-node.on .t-ring { stroke-width: 3.5; }
+.t-halo { fill: color-mix(in oklab, var(--accent) 14%, transparent); stroke: none; }
+.t-node.dim { opacity: .18; }
+.t-card.open rect { stroke: var(--accent); }
+.t-card.merged rect { stroke: color-mix(in oklab, var(--accent) 30%, var(--line)); }
+.t-card.trunk rect { fill: var(--accent); stroke: var(--accent); }
+.t-card.trunk .t-card-title { fill: var(--accent-ink); }
+.t-card.trunk .t-card-sub { fill: color-mix(in oklab, var(--accent-ink) 75%, var(--accent)); }
+.t-card.merged .t-card-dot { fill: color-mix(in oklab, var(--accent) 40%, var(--bg)); }
+.t-card-link { stroke: color-mix(in oklab, var(--accent) 45%, var(--bg)); }
+.t-link { fill: color-mix(in oklab, var(--accent) 70%, var(--ink-3)); }
+.t-time line { stroke: color-mix(in oklab, var(--accent) 9%, transparent); }
+.tree-page::before { background-image: radial-gradient(color-mix(in oklab, var(--accent) 16%, transparent) 1px, transparent 1px); }
+.ask-starters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.ask-starters .chip { height: auto; padding: 6px 11px; font-weight: 500; text-align: left; }
+.ask-starters .chip:hover { border-color: var(--accent); color: var(--ink); }
+.ask-thread { display: grid; gap: 12px; margin-bottom: 12px; }
+.ask-turn { display: flex; gap: 10px; align-items: flex-start; }
+.ask-turn p { font-size: 14px; line-height: 1.55; white-space: pre-wrap; }
+.ask-turn.user { justify-content: flex-end; }
+.ask-turn.user p { background: var(--accent-soft); padding: 8px 12px; border-radius: 12px 12px 4px 12px; max-width: 85%; margin-left: auto; }
+.ask-turn.user > div { display: flex; justify-content: flex-end; width: 100%; }
+.ask-mark { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; }
+.ask-mark svg { width: 14px; height: 14px; }
+.ask-box { display: flex; gap: 8px; align-items: center; }
+.ask-box .input { height: 36px; border-radius: 99px; padding: 0 14px; }
+.signup-cta { display: grid; gap: 8px; margin-top: 10px; padding-top: 16px; border-top: 1px solid var(--line); text-align: center; font-size: 13px; color: var(--ink-3); }
+.signup-cta .btn { height: 40px; }
+.field > span .hint { margin-left: 6px; }
+.planter { display: grid; gap: 12px; text-align: left; }
+.planter-row { display: flex; gap: 8px; align-items: center; }
+.planter-row .input { flex: 1; }
+.planter-gh { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; background: var(--ink); color: var(--bg); flex: none; }
+.planter-gh svg { width: 18px; height: 18px; }
+.planter-list { list-style: none; margin: 0; padding: 0; max-height: 320px; overflow: auto; border: 1px solid var(--line); border-radius: 12px; }
+.planter-list li { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.planter-list li:last-child { border-bottom: 0; }
+.planter-list .grow { display: grid; min-width: 0; }
+.planter-list b { font-size: 13px; }
+.planter-row.manual .input { height: 34px; font-size: 13px; }
+.plant .btn.block-left { width: 100%; justify-content: flex-start; height: 34px; margin-top: 6px; }
+.plant-first { pointer-events: auto; overflow: auto; }
+.plant-card { width: min(560px, 100%); margin-top: 14px; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); color: var(--ink); }
