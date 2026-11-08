@@ -40,7 +40,7 @@ export function App()
 
     useEffect(() => {
         if (me && me !== 'out') {
-            document.documentElement.style.setProperty('--accent', me.theme.accent)
+            document.documentElement.style.setProperty('--accent-base', me.theme.accent)
             document.title = `${me.theme.name || me.company} · Studio OS`
         }
     }, [me])
