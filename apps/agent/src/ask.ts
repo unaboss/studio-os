@@ -2,6 +2,7 @@
 // the facts (the commit, what it changed, the trimmed diff, every file in the
 // repo at that point, and any file the question names) and the agent answers
 // from those alone. With no model it still answers from the same facts.
+import { plainExplanation } from './explain.ts'
 import type { ChatMessage, Inference } from './inference.ts'
 
 export interface CodeFacts
@@ -38,9 +39,11 @@ export function filesNamed(question: string, files: readonly string[], max = 2):
     return hits.slice(0, max)
 }
 
-export function plainAnswer(f: CodeFacts): string
+export function plainAnswer(f: CodeFacts, question = ''): string
 {
     const c = f.commit
+    const q = question.toLowerCase()
+    const facts = { repo: f.repo, kind: 'commit' as const, title: c.subject, commits: [c], files: f.changed, patch: f.patch }
     const lines: string[] = []
     const named = f.opened.map((o) => o.path)
     if (named.length) {
@@ -51,12 +54,20 @@ export function plainAnswer(f: CodeFacts): string
                 ? `${path} was changed in this commit (+${ch.added ?? '?'} −${ch.removed ?? '?'}). At this point it has about ${size} lines.`
                 : `${path} was not touched by this commit. At this point it has about ${size} lines.`)
         }
+    } else if (/risk|safe|ship|review|danger|break/.test(q)) {
+        const review = plainExplanation(facts).review
+        lines.push(review.length ? review.join(' ') : `It is small: ${f.changed.length} ${f.changed.length === 1 ? 'file' : 'files'}, and none of the file names point to payment, security or data code. Still read the diff for "${c.subject}" before it ships.`)
+    } else if (/test/.test(q)) {
+        const tests = f.files.filter((p) => /(^|\/)(test|tests|__tests__)\/|\.(test|spec)\./.test(p))
+        lines.push(tests.length
+            ? `The repo has ${tests.length} test ${tests.length === 1 ? 'file' : 'files'} at this point, such as ${tests.slice(0, 3).join(', ')}. Run those, then try "${c.subject}" by hand.`
+            : `There are no automated tests in the repo at this point, so check "${c.subject}" by hand: open it with View and try ${f.changed.slice(0, 2).map((x) => x.path).join(' and ') || 'the change'}.`)
     } else {
-        lines.push(`At ${f.sha.slice(0, 7)}, ${c.author.split(' ')[0]} committed "${c.subject}", changing ${f.changed.length} ${f.changed.length === 1 ? 'file' : 'files'}: ${f.changed.slice(0, 4).map((x) => x.path).join(', ') || 'none'}.`)
+        lines.push(plainExplanation(facts).summary)
         const top = [...new Set(f.files.map((p) => (p.includes('/') ? p.split('/')[0] + '/' : p)))].slice(0, 8)
         lines.push(`The repo has ${f.files.length} files at this point, including ${top.join(', ')}.`)
     }
-    lines.push('No model is connected on this server, so this is only what the commit itself shows. Add an inference key to get full answers.')
+    lines.push('(Answered from the commit itself. Connect a model for fuller answers.)')
     return lines.join(' ')
 }
 
@@ -79,7 +90,7 @@ export function factsMessage(f: CodeFacts): string
 
 export async function askAboutCode(inference: Inference | null, f: CodeFacts, question: string, history: readonly Turn[] = []): Promise<Answer>
 {
-    if (!inference) return { answer: plainAnswer(f), model: null }
+    if (!inference) return { answer: plainAnswer(f, question), model: null }
     try {
         const reply = await inference.chat([
             { role: 'system', content: SYSTEM },
@@ -89,10 +100,10 @@ export async function askAboutCode(inference: Inference | null, f: CodeFacts, qu
             { role: 'user', content: question },
         ], { maxTokens: 600, temperature: 0.2 })
         const answer = reply.replace(/<think>[\s\S]*?<\/think>/g, '').trim()
-        if (!answer) return { answer: plainAnswer(f), model: null }
+        if (!answer) return { answer: plainAnswer(f, question), model: null }
         return { answer: answer.slice(0, 4000), model: inference.model }
     } catch (err) {
         console.error('ask: model failed, using the plain answer', err)
-        return { answer: plainAnswer(f), model: null }
+        return { answer: plainAnswer(f, question), model: null }
     }
 }
