@@ -124,6 +124,21 @@ describe('code CRM', () => {
         expect((await get(`/api/code/preview?repo=demo-studio/marula-portal&sha=${marula.body.commits[0].sha}`)).body.url).toBeNull()
     })
 
+    it('keeps the shared demo accounts from changing anything but lets them look and ask', async () => {
+        const db = pgliteDb(new PGlite())
+        await migrateAll(db)
+        await seedDemo(db, { now: NOW })
+        const locked = createApp({ db, sessionSecret: 'y'.repeat(40), demo: true, lockDemo: true, inference: null, code: codeRepos({ dir, local: await makeDemoRepos(join(dir, 'demo2'), NOW) }), now: () => NOW })
+        const res = await locked.request('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'thabo@demo.studio', password: 'demo-manager' }) })
+        const cookie = res.headers.get('set-cookie')!.split(';')[0]!
+        const send = (path: string, method: string, body: unknown) => locked.request(path, { method, headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        expect((await send('/api/me', 'PATCH', { password: 'x'.repeat(12), currentPassword: 'demo-manager' })).status).toBe(403)
+        expect((await send('/api/me', 'PATCH', { githubLogin: 'someone' })).status).toBe(403)
+        expect((await send('/api/settings', 'PUT', { name: 'Hacked' })).status).toBe(403)
+        const graph = await (await locked.request('/api/code/graph?repo=demo-studio/tidepool-booking', { headers: { cookie } })).json() as any
+        expect((await send('/api/code/ask?repo=demo-studio/tidepool-booking', 'POST', { sha: graph.commits[0].sha, question: 'What is this?' })).status).toBe(200)
+    }, 60_000)
+
     it('lets anyone start their own space, solo or as a team', async () => {
         const res = await app.request('/api/signup', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'Ayanda Zulu', email: 'ayanda@example.com', password: 'a long password' }) })
         expect(res.status).toBe(200)

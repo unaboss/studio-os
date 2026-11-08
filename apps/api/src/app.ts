@@ -42,6 +42,8 @@ export interface AppOptions
     readonly mail?: { resendKey?: string | undefined; from?: string | undefined }
     /** Shows the demo logins on the sign-in page. */
     readonly demo?: boolean
+    /** The demo accounts are shared by the public, so keep them from changing anything. */
+    readonly lockDemo?: boolean
     /** Repos kept on the server for the code tree. */
     readonly code?: CodeRepos | null
     readonly now?: () => Date
@@ -223,6 +225,12 @@ export function createApp(opts: AppOptions): Hono<Env>
         if (!user) return c.json({ error: 'Please sign in' }, 401)
         c.set('user', user)
         c.set('ctx', await contextFor(user.company_id, actorOf(user)))
+        // The demo accounts are shared by everyone who tries the public demo, so
+        // they can look, ask the agent and plant a few repos, but not change
+        // passwords, settings or records for the next visitor.
+        if (opts.lockDemo && MUTATING.has(c.req.method) && /@demo\.studio$/i.test(user.email) && !DEMO_WRITES.has(c.req.path)) {
+            return c.json({ error: 'This is the shared demo, so it stays as it is. Start your own space from the sign-in page to change things.' }, 403)
+        }
         await next()
     })
 
@@ -667,7 +675,8 @@ export function createApp(opts: AppOptions): Hono<Env>
         if (!REPO_NAME.test(repo)) throw new ValidationError(['Write the repo as owner/name, or paste its GitHub link'])
         const repos = await projectRepos(ctx)
         if (repos.some((r) => r.repo.toLowerCase() === repo.toLowerCase())) return c.json({ repo: repos.find((r) => r.repo.toLowerCase() === repo.toLowerCase())!.repo })
-        if (repos.length >= 25) throw new ValidationError(['This space already has 25 trees. Remove one first.'])
+        const cap = opts.lockDemo && /@demo\.studio$/i.test(c.get('user').email) ? 8 : 25
+        if (repos.length >= cap) throw new ValidationError([cap === 8 ? 'The shared demo is full. Start your own space to plant more.' : 'This space already has 25 trees. Remove one first.'])
         const graph = await opts.code.graph(repo)
         const [owner, name] = repo.split('/') as [string, string]
         const clients = await ctx.records.list('client', { limit: 1000 })
@@ -782,6 +791,9 @@ function fillSelf(ctx: Ctx, type: string, data: Record<string, unknown>): Record
     }
     return out
 }
+
+/** What the shared demo accounts may still do. */
+const DEMO_WRITES = new Set(['/api/logout', '/api/code/explain', '/api/code/ask', '/api/code/plant'])
 
 const SITE_ROOTS = ['', 'public/', 'site/', 'docs/', 'www/', 'dist/', 'build/', 'src/']
 const PREVIEW_TYPES: Record<string, string> = {

@@ -104,6 +104,7 @@ export async function main(): Promise<void>
         sandbox,
         mail: { resendKey: env.RESEND_API_KEY, from: env.MAIL_FROM },
         demo: env.DEMO === '1',
+        lockDemo: env.DEMO === '1' && env.DEMO_UNLOCKED !== '1',
         code,
     })
 
