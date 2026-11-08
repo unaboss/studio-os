@@ -9,6 +9,8 @@ import { RecordPage } from './pages/Record.tsx'
 import { Team } from './pages/Team.tsx'
 import { Settings } from './pages/Settings.tsx'
 import { CodeTree } from './pages/CodeTree.tsx'
+import { Profile } from './pages/Profile.tsx'
+import { Avatar } from './avatar.tsx'
 
 export function App()
 {
@@ -92,38 +94,43 @@ function Shell()
     useEffect(() => setOpen(false), [loc.pathname])
     const isManager = me.role === 'manager'
     const link = (to: string, label: string, icon: () => ReactNode) => (
-        <NavLink to={to} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
-            {icon()} {label}
+        <NavLink to={to} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} title={label} aria-label={label}>
+            {icon()} <span className="nav-text">{label}</span>
         </NavLink>
     )
     const name = me.theme.name || me.company
+    const full = loc.pathname.startsWith('/code')
     return (
-        <div className="shell">
+        <div className={`shell ${full ? 'full' : ''}`}>
             <div className="topbar">
                 <button className="btn ghost sm" onClick={() => setOpen(true)} aria-label="Menu"><Icon.menu /></button>
                 <strong>{name}</strong>
                 <span />
             </div>
-            <aside className={`sidebar ${open ? 'open' : ''}`}>
-                <div className="brand">
+            <aside className={`sidebar rail ${open ? 'open' : ''}`}>
+                <div className="brand" title={name}>
                     <div className="brand-mark">{name.slice(0, 1)}</div>
-                    <div>{name}<small>Code CRM</small></div>
+                    <div className="nav-text">{name}<small>Code CRM</small></div>
                 </div>
                 {link('/code', 'Tree', Icon.tree)}
                 {link('/projects', 'Projects', Icon.projects)}
                 {link('/team', 'People', Icon.people)}
                 {isManager ? link('/settings', 'Settings', Icon.settings) : null}
                 <div className="sidebar-foot">
-                    <div className="nav-link small faint" style={{ cursor: 'default' }}>{me.name} · {isManager ? 'manager' : 'developer'}</div>
-                    <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', textAlign: 'left' }} onClick={signOut}><Icon.out /> Sign out</button>
+                    <NavLink to={`/team/${me.id}`} className="nav-link me-link" title={`${me.name} · ${isManager ? 'manager' : 'developer'}`}>
+                        <Avatar name={me.name} email={me.email} github={me.githubLogin} size={26} />
+                        <span className="nav-text">{me.name}</span>
+                    </NavLink>
+                    <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', textAlign: 'left' }} onClick={signOut} title="Sign out" aria-label="Sign out"><Icon.out /> <span className="nav-text">Sign out</span></button>
                 </div>
             </aside>
             {open ? <div className="overlay" style={{ zIndex: 35 }} onClick={() => setOpen(false)} /> : null}
-            <main className="main">
+            <main className={`main ${full ? 'main-full' : ''}`}>
                 <Routes>
                     <Route path="/code" element={<CodeTree />} />
                     <Route path="/projects" element={<Projects />} />
                     <Route path="/team" element={<Team />} />
+                    <Route path="/team/:id" element={<Profile />} />
                     <Route path="/records/:id" element={<RecordPage />} />
                     {isManager ? <Route path="/settings/*" element={<Settings />} /> : null}
                     <Route path="*" element={<Navigate to="/code" replace />} />
