@@ -49,7 +49,7 @@ async function chooseModel(apiKey: string): Promise<string | null>
     }
 }
 
-async function main(): Promise<void>
+export async function main(): Promise<void>
 {
     const secret = env.SESSION_SECRET
     if (!secret || secret.length < 32) throw new Error('Set SESSION_SECRET to at least 32 random characters')
