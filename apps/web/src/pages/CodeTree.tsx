@@ -1076,6 +1076,11 @@ export function CodeTree()
     const [view, setView] = useState<{ seq: string[]; start: number; label: string } | null>(null)
     const [box, setBox] = useState<HTMLDivElement | null>(null)
     const [size, setSize] = useState({ w: 0, h: 0 })
+    const [panelOpen, setPanelOpen] = useState(() => { try { return localStorage.getItem('studio-panel') !== 'closed' } catch { return true } })
+    const togglePanel = (open: boolean) => {
+        setPanelOpen(open)
+        try { localStorage.setItem('studio-panel', open ? 'open' : 'closed') } catch { /* fine for this visit */ }
+    }
 
     useEffect(() => {
         if (!box) return
@@ -1134,9 +1139,9 @@ export function CodeTree()
     else if (!t) body = <Hint title="Growing the tree…" />
 
     return (
-        <div className={`tree-page ${t ? 'has-drawer' : ''} ${shown ? 'picked' : ''}`}>
+        <div className={`tree-page ${t && panelOpen ? 'has-drawer' : ''} ${shown ? 'picked' : ''}`}>
             <div className="tree-canvas" ref={setBox}>
-                {t && graph.data ? <Tree g={graph.data} t={t} upto={upto} selected={shown} onSelect={(s) => { setPb(null); setSelected(s) }} who={who} box={box} people={people} /> : null}
+                {t && graph.data ? <Tree g={graph.data} t={t} upto={upto} selected={shown} onSelect={(s) => { setPb(null); setSelected(s); togglePanel(true) }} who={who} box={box} people={people} /> : null}
             </div>
             {body}
 
@@ -1154,6 +1159,7 @@ export function CodeTree()
                     {graph.data?.fetchedAt ? <span className="small faint hide-sm">Synced {ago(graph.data.fetchedAt)}</span> : null}
                     <button className="btn ghost sm icon-only" onClick={graph.reload} aria-label="Refresh" title="Refresh"><Icon.refresh /></button>
                     {t ? <button className="btn sm" onClick={replayAll}><Icon.play /> Replay</button> : null}
+                    {t ? <button className={`btn ghost sm icon-only panel-toggle ${panelOpen ? 'on' : ''}`} onClick={() => togglePanel(!panelOpen)} aria-pressed={panelOpen} aria-label={panelOpen ? 'Hide the side panel' : 'Show the side panel'} title={panelOpen ? 'Hide the side panel' : 'Show the side panel'}><Icon.panel /></button> : null}
                 </div>
             </header>
 
@@ -1170,8 +1176,9 @@ export function CodeTree()
                 </footer>
             ) : null}
 
-            {repo && t && graph.data ? (
+            {repo && t && graph.data && panelOpen ? (
                 <aside className={`tree-drawer panel ${shown ? 'has-commit' : ''}`} aria-label="Changes and people">
+                    <button className="panel-collapse" onClick={() => togglePanel(false)} aria-label="Collapse the side panel" title="Collapse"><Icon.chev /></button>
                     <div className="panel-scroll">
                         {shown ? (
                             <CommitView

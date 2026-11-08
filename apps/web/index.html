@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#0f766e" />
+    <script>
+      // Dark by default; a viewer's own choice wins. Set before paint so there is no flash.
+      try { document.documentElement.dataset.theme = localStorage.getItem('studio-theme') || 'dark' } catch { document.documentElement.dataset.theme = 'dark' }
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

@@ -892,3 +892,17 @@ ul.plain li > .small.faint:last-child { margin-left: auto; white-space: nowrap; 
 .crown.old .crown-hatch { stroke: color-mix(in oklab, var(--accent) 18%, var(--bg)); }
 .crown circle { transform-box: fill-box; transform-origin: center; animation: t-pop .5s cubic-bezier(.2,1.2,.4,1) both; }
 .t-graft { fill: color-mix(in oklab, var(--accent) 30%, var(--bg)); }
+
+/* ---- Dark by default, and a collapsible side panel ---- */
+:root[data-theme='dark'] { --shadow: 0 1px 2px rgb(0 0 0 / 0.4); --shadow-lg: 0 16px 48px rgb(0 0 0 / 0.5); --accent-soft: color-mix(in oklab, var(--accent) 22%, var(--surface)); }
+.panel-collapse {
+    position: absolute; left: -15px; top: 76px; z-index: 3; width: 30px; height: 30px; border-radius: 50%;
+    display: grid; place-items: center; cursor: pointer; color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--line-strong); box-shadow: var(--shadow);
+}
+.panel-collapse:hover { color: var(--accent); border-color: var(--accent); }
+.panel-collapse svg { width: 15px; height: 15px; }
+.tree-drawer.panel { overflow: visible; }
+.panel-scroll { border-radius: 0; }
+.panel-toggle.on { color: var(--accent); background: var(--accent-soft); }
+@media (max-width: 760px) { .panel-collapse { left: auto; right: 12px; top: 10px; transform: rotate(90deg); } }

@@ -121,6 +121,7 @@ function Shell()
                         <Avatar name={me.name} email={me.email} github={me.githubLogin} size={26} />
                         <span className="nav-text">{me.name}</span>
                     </NavLink>
+                    <ThemeToggle />
                     <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', textAlign: 'left' }} onClick={signOut} title="Sign out" aria-label="Sign out"><Icon.out /> <span className="nav-text">Sign out</span></button>
                 </div>
             </aside>
@@ -137,5 +138,23 @@ function Shell()
                 </Routes>
             </main>
         </div>
+    )
+}
+
+/** Light or dark, remembered on this device. Dark is the default. */
+function ThemeToggle()
+{
+    const [theme, setTheme] = useState(() => document.documentElement.dataset.theme === 'light' ? 'light' : 'dark')
+    const flip = () => {
+        const next = theme === 'dark' ? 'light' : 'dark'
+        document.documentElement.dataset.theme = next
+        try { localStorage.setItem('studio-theme', next) } catch { /* private mode: still switches for this visit */ }
+        setTheme(next)
+    }
+    const label = theme === 'dark' ? 'Light mode' : 'Dark mode'
+    return (
+        <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', textAlign: 'left' }} onClick={flip} title={label} aria-label={label}>
+            {theme === 'dark' ? <Icon.sun /> : <Icon.moon />} <span className="nav-text">{label}</span>
+        </button>
     )
 }
