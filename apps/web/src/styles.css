@@ -876,3 +876,19 @@ ul.plain li > .small.faint:last-child { margin-left: auto; white-space: nowrap; 
 .plant .btn.block-left { width: 100%; justify-content: flex-start; height: 34px; margin-top: 6px; }
 .plant-first { pointer-events: auto; overflow: auto; }
 .plant-card { width: min(560px, 100%); margin-top: 14px; padding: 18px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); color: var(--ink); }
+
+/* ---- Round 4: 3D line-work tree ---- */
+.wood-body { fill: color-mix(in oklab, var(--accent) 7%, var(--bg)); stroke: var(--accent); stroke-width: 1.4; stroke-linejoin: round; }
+.wood-grain { fill: none; stroke: var(--accent); stroke-width: .9; stroke-linecap: round; opacity: .75; }
+.wood-grain.light { opacity: .35; }
+.wood-ring { fill: none; stroke: var(--accent); stroke-width: .9; stroke-linecap: round; opacity: .6; }
+.wood.old .wood-body { fill: var(--bg); stroke: color-mix(in oklab, var(--accent) 45%, var(--bg)); }
+.wood.old .wood-grain, .wood.old .wood-ring { stroke: color-mix(in oklab, var(--accent) 45%, var(--bg)); }
+.wood.grow { animation: t-fade .5s ease-out both; }
+.wood.root .wood-body { fill: var(--bg); }
+.crown-mass { fill: color-mix(in oklab, var(--accent) 4%, var(--bg)); stroke: color-mix(in oklab, var(--accent) 60%, var(--bg)); stroke-width: 1.2; }
+.crown-hatch { fill: none; stroke: color-mix(in oklab, var(--accent) 40%, var(--bg)); stroke-width: 1; stroke-linecap: round; }
+.crown.old .crown-mass { stroke: color-mix(in oklab, var(--accent) 28%, var(--bg)); fill: var(--bg); }
+.crown.old .crown-hatch { stroke: color-mix(in oklab, var(--accent) 18%, var(--bg)); }
+.crown circle { transform-box: fill-box; transform-origin: center; animation: t-pop .5s cubic-bezier(.2,1.2,.4,1) both; }
+.t-graft { fill: color-mix(in oklab, var(--accent) 30%, var(--bg)); }
