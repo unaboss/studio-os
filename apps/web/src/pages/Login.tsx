@@ -34,8 +34,8 @@ export function Login({ onSignedIn }: { onSignedIn: () => void })
             <div className="login-art">
                 <div className="row"><div className="brand-mark" style={{ background: 'rgb(255 255 255 / 0.18)' }}>S</div><strong>Studio OS</strong></div>
                 <div className="stack" style={{ gap: 16 }}>
-                    <h1>Run the studio, not the admin.</h1>
-                    <p>Projects, money, people and GitHub in one place, for software studios of two to twenty. A back-office agent does the morning rounds and asks before anything leaves the building.</p>
+                    <h1>Every project's code, growing in one place.</h1>
+                    <p>A code CRM for software teams. Each client project is a living tree: branches grow, merged work grafts back in, and any commit opens the code as it was. An agent on Vultr explains what changed, and the people page shows what everyone is building.</p>
                 </div>
                 <p className="small">Built on Vultr · MIT licensed</p>
             </div>
@@ -49,7 +49,7 @@ export function Login({ onSignedIn }: { onSignedIn: () => void })
                                 {info.accounts.map((a) => (
                                     <button type="button" key={a.email} disabled={busy} onClick={() => signIn(undefined, a)}>
                                         <strong>{a.label}</strong>
-                                        <span className="small muted">{a.label === 'Manager' ? 'Cash, projects, approvals' : 'My day, time, claims'}</span>
+                                        <span className="small muted">{a.label === 'Manager' ? 'Every project, every person' : 'The trees and your own work'}</span>
                                     </button>
                                 ))}
                             </div>

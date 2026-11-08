@@ -385,3 +385,45 @@ table.table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .code-files button.on { background: var(--accent-soft); color: var(--ink); font-weight: 600; }
 .code-file-head { font-size: 12px; margin-bottom: 6px; }
 @media (max-width: 1100px) { .code-layout { grid-template-columns: 1fr; } .code-panel { position: static; max-height: none; } }
+.explain { margin-top: 12px; }
+.explain-card { margin-top: 10px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--accent-soft); border: 1px solid var(--accent-line); }
+.explain-card p { margin: 6px 0; line-height: 1.5; }
+.explain-card ul { margin: 6px 0 8px; padding-left: 18px; }
+.explain-card li { margin: 3px 0; font-size: 13.5px; }
+.project-switch { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.project-switch button { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius); border: 1px solid var(--line); background: var(--surface); cursor: pointer; text-align: left; color: var(--ink); box-shadow: var(--shadow); }
+.project-switch button > span:last-child { display: grid; }
+.project-switch button.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.health { width: 10px; height: 10px; border-radius: 50%; flex: none; background: var(--line-strong); }
+.health.good { background: var(--good); }
+.health.watch { background: var(--warning); }
+.health.attention { background: var(--critical); }
+.contributors { margin-top: 16px; padding: 14px 16px; }
+.contributor-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.contributor { display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 8px; border-radius: 99px; border: 1px solid var(--line); background: var(--surface-2); cursor: pointer; text-align: left; color: var(--ink); }
+.contributor > span:last-child { display: grid; line-height: 1.25; }
+.contributor.on { border-color: var(--accent); background: var(--accent-soft); }
+.contributor.dim { opacity: .55; }
+.avatar { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 13px; flex: none; }
+
+/* ---- Health notes, projects and people ---- */
+.health-note { display: flex; align-items: center; gap: 10px; margin: -4px 0 12px; padding: 9px 14px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface); font-size: 13.5px; }
+.health-note.attention { border-color: color-mix(in oklab, var(--critical) 40%, var(--line)); background: color-mix(in oklab, var(--critical) 7%, var(--surface)); }
+.health-note.watch { border-color: color-mix(in oklab, var(--warning) 40%, var(--line)); background: color-mix(in oklab, var(--warning) 7%, var(--surface)); }
+.project-rows > li .health { margin-top: 2px; }
+.people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 16px; align-items: start; }
+.person header { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+.person header h2 { margin: 0; font-size: 17px; }
+.avatar.lg { width: 44px; height: 44px; font-size: 15px; }
+.person-stats { display: flex; gap: 16px; text-align: right; }
+.person-stats > div { display: grid; }
+.person-stats b { font-size: 20px; line-height: 1.1; }
+.person-block { padding: 12px 18px 14px; border-bottom: 1px solid var(--line); }
+.person-block:last-child { border-bottom: 0; }
+.person-block h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-3); font-weight: 600; }
+ul.plain { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
+ul.plain li { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13.5px; }
+ul.plain li svg { width: 14px; height: 14px; flex: none; color: var(--accent); }
+ul.plain li > .small.faint:last-child { margin-left: auto; white-space: nowrap; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+@media (max-width: 560px) { .person-stats { display: none; } ul.plain li > .small.faint:last-child { display: none; } }

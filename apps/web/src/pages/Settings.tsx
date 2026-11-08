@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { announceChange, api } from '../api.ts'
 import { Icon } from '../icons.tsx'
 import { Empty, PageHead, Pill, useStudio } from '../ui.tsx'
+import { Logins } from './People.tsx'
 
 interface FieldDef { key: string; label: string; kind: string; options?: string[]; required?: boolean }
 interface ProjectType { id: string; name: string; billing: 'phased' | 'retainer' | 'hourly'; phases: { name: string; share: number }[] }
@@ -20,7 +21,7 @@ interface Config
 interface Installed { id: string; name: string; description: string; required: boolean; dependsOn: string[]; records: { type: string; label: string; statuses: string[]; fields: string[] }[]; tiles: { id: string; title: string; sides: string[] }[] }
 interface SettingsData { name: string; config: Config; installed: Installed[]; integrations: { github: boolean; githubWebhook: boolean; inference: string | null; sandbox: boolean; mail: boolean } }
 
-type Tab = 'company' | 'modules' | 'fields' | 'types' | 'layout' | 'integrations'
+type Tab = 'company' | 'team' | 'integrations'
 
 const KINDS = ['text', 'longtext', 'number', 'money', 'date', 'select', 'boolean', 'url', 'user']
 
@@ -56,20 +57,17 @@ export function Settings()
 
     return (
         <>
-            <PageHead title="Settings" sub="Shape Studio OS around how your studio works. No code, no redeploy.">
+            <PageHead title="Settings" sub="Your company, who can sign in, and the connections to GitHub and Vultr.">
                 {dirty ? <button className="btn" onClick={() => load()}>Undo changes</button> : null}
                 <button className="btn primary" disabled={!dirty} onClick={save}>Save</button>
             </PageHead>
             <div className="tabs">
-                {([['company', 'Company'], ['modules', 'Modules'], ['fields', 'Fields and statuses'], ['types', 'Project types'], ['layout', 'Screens'], ['integrations', 'Connections']] as [Tab, string][]).map(([t, l]) => (
+                {([['company', 'Company'], ['team', 'Team'], ['integrations', 'Connections']] as [Tab, string][]).map(([t, l]) => (
                     <button key={t} className={tab === t ? 'on' : ''} onClick={() => setTab(t)}>{l}</button>
                 ))}
             </div>
             {tab === 'company' ? <Company config={config} update={update} name={name} setName={(n) => { setName(n); setDirty(true) }} /> : null}
-            {tab === 'modules' ? <Modules config={config} update={update} installed={data.installed} /> : null}
-            {tab === 'fields' ? <Fields config={config} update={update} installed={data.installed} /> : null}
-            {tab === 'types' ? <ProjectTypes config={config} update={update} /> : null}
-            {tab === 'layout' ? <Layout config={config} update={update} installed={data.installed} /> : null}
+            {tab === 'team' ? <Logins /> : null}
             {tab === 'integrations' ? <Integrations i={data.integrations} /> : null}
         </>
     )
@@ -79,8 +77,6 @@ type Props = { config: Config; update: (c: Config) => void }
 
 function Company({ config, update, name, setName }: Props & { name: string; setName: (n: string) => void })
 {
-    const s = config.settings ?? {}
-    const setS = (mod: string, key: string, value: unknown) => update({ ...config, settings: { ...s, [mod]: { ...(s[mod] ?? {}), [key]: value } } })
     return (
         <div className="card card-pad">
             <div className="form-grid">
@@ -89,27 +85,6 @@ function Company({ config, update, name, setName }: Props & { name: string; setN
                 <label className="field"><span>Brand colour</span>
                     <div className="row"><input type="color" value={config.theme.accent} onChange={(e) => update({ ...config, theme: { ...config.theme, accent: e.target.value } })} style={{ width: 48, height: 38, border: 0, background: 'none' }} /><span className="mono">{config.theme.accent}</span></div>
                 </label>
-                <label className="field"><span>Payment terms (days)</span><input className="input num" type="number" value={config.paymentTermsDays ?? 14} onChange={(e) => update({ ...config, paymentTermsDays: Number(e.target.value) })} /></label>
-                <label className="field"><span>Financial year ends in</span>
-                    <select className="select" value={s.compliance?.yearEndMonth ?? 2} onChange={(e) => setS('compliance', 'yearEndMonth', Number(e.target.value))}>
-                        {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
-                    </select>
-                </label>
-                <label className="field"><span>Incorporated on</span><input className="input" type="date" value={s.compliance?.incorporated ?? ''} onChange={(e) => setS('compliance', 'incorporated', e.target.value)} /><span className="hint">For the CIPC annual return.</span></label>
-                <label className="field"><span>VAT</span>
-                    <select className="select" value={s.compliance?.vatRegistered ? (s.compliance?.vatPeriods ?? 'odd') : 'no'} onChange={(e) => update({ ...config, settings: { ...s, compliance: { ...(s.compliance ?? {}), vatRegistered: e.target.value !== 'no', vatPeriods: e.target.value === 'even' ? 'even' : 'odd' } } })}>
-                        <option value="no">Not registered</option>
-                        <option value="odd">Every two months, periods ending Jan, Mar, May…</option>
-                        <option value="even">Every two months, periods ending Feb, Apr, Jun…</option>
-                    </select>
-                </label>
-                <label className="field"><span>Payday</span><input className="input num" type="number" min={1} max={31} value={s.people?.payday ?? 25} onChange={(e) => setS('people', 'payday', Number(e.target.value))} /></label>
-                <label className="field"><span>Agent morning round at</span>
-                    <select className="select" value={s.agent?.hour ?? 6} onChange={(e) => setS('agent', 'hour', Number(e.target.value))}>
-                        {[5, 6, 7, 8, 9].map((h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
-                    </select>
-                </label>
-                <label className="field"><span>Invoice number prefix</span><input className="input mono" value={s.money?.invoicePrefix ?? 'INV-'} onChange={(e) => setS('money', 'invoicePrefix', e.target.value)} /></label>
             </div>
         </div>
     )

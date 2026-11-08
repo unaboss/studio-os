@@ -96,7 +96,7 @@ function Payroll()
     )
 }
 
-function Logins()
+export function Logins()
 {
     const { me, toast, refresh } = useStudio()
     const { data, reload } = useApi<{ users: User[] }>('/api/users')

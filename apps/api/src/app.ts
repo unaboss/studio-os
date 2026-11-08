@@ -22,6 +22,7 @@ import { GITHUB, handleGithubEvent, type GithubService } from '@studio-os/module
 import { importBankLines, parseBankCsv, withFingerprints } from '@studio-os/module-money'
 import { hashPassword, readSession, sessionToken, verifyGithubSignature, verifyPassword } from './auth.ts'
 import { CodeError, REPO_NAME, type CodeRepos } from './codetree.ts'
+import { codePeople, projectHealth } from './codeinsights.ts'
 import type { Sandbox } from './sandbox.ts'
 import { mailService } from './services.ts'
 import { Companies, INSTALLED } from './studio.ts'
@@ -114,7 +115,7 @@ export function createApp(opts: AppOptions): Hono<Env>
         accounts: opts.demo
             ? [
                 { label: 'Manager', email: 'thabo@demo.studio', password: 'demo-manager' },
-                { label: 'Employee', email: 'lerato@demo.studio', password: 'demo-employee' },
+                { label: 'Developer', email: 'lerato@demo.studio', password: 'demo-employee' },
             ]
             : [],
     }))
@@ -571,9 +572,10 @@ export function createApp(opts: AppOptions): Hono<Env>
     const projectRepos = async (ctx: Ctx) =>
     {
         const projects = await ctx.records.list('project', { limit: 500 })
+        const clients = new Map((await ctx.records.list('client', { limit: 1000 }).catch(() => [])).map((c) => [c.id, c.title]))
         return projects
             .filter((p) => typeof p.data.repo === 'string' && REPO_NAME.test(String(p.data.repo).trim()))
-            .map((p) => ({ projectId: p.id, project: p.title, status: p.status, repo: String(p.data.repo).trim() }))
+            .map((p) => ({ projectId: p.id, project: p.title, status: p.status, repo: String(p.data.repo).trim(), clientId: String(p.data.client ?? ''), client: clients.get(String(p.data.client)) ?? '' }))
     }
     const allowedRepo = async (c: Context<Env>) =>
     {
@@ -583,7 +585,19 @@ export function createApp(opts: AppOptions): Hono<Env>
         return { code: opts.code, repo }
     }
 
-    app.get('/api/code', async (c) => c.json({ enabled: !!opts.code, repos: await projectRepos(c.get('ctx')) }))
+    app.get('/api/code', async (c) => {
+        const repos = await projectRepos(c.get('ctx'))
+        const health = await projectHealth(c.get('ctx'), db, opts.code ?? null, repos, now())
+        // Busiest first, so the tree opens on the project with the most going on.
+        const rows = repos.map((r) => ({ ...r, ...health.get(r.projectId) }))
+            .sort((a, b) => (b.lastCommit ?? '').localeCompare(a.lastCommit ?? ''))
+        return c.json({ enabled: !!opts.code, repos: rows })
+    })
+
+    app.get('/api/code/people', async (c) => {
+        const ctx = c.get('ctx')
+        return c.json(await codePeople(ctx, db, opts.code ?? null, await projectRepos(ctx), now()))
+    })
 
     app.get('/api/code/graph', async (c) => {
         const { code, repo } = await allowedRepo(c)

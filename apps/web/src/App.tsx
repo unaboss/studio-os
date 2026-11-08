@@ -1,20 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { api, useApi, type Me, type Schema, type User } from './api.ts'
+import { api, type Me, type Schema, type User } from './api.ts'
 import { Icon } from './icons.tsx'
 import { StudioContext, useStudio as useStudioSafe, type Studio } from './ui.tsx'
 import { Login } from './pages/Login.tsx'
-import { Today } from './pages/Today.tsx'
 import { Projects } from './pages/Projects.tsx'
 import { RecordPage } from './pages/Record.tsx'
-import { Money } from './pages/Money.tsx'
-import { People } from './pages/People.tsx'
-import { Sales } from './pages/Sales.tsx'
-import { Compliance } from './pages/Compliance.tsx'
-import { Automations } from './pages/Automations.tsx'
+import { Team } from './pages/Team.tsx'
 import { Settings } from './pages/Settings.tsx'
-import { Activity } from './pages/Activity.tsx'
-import { MyDay, MyTasks, MyTime, MyClaims, MyLeave } from './pages/Employee.tsx'
 import { CodeTree } from './pages/CodeTree.tsx'
 
 export function App()
@@ -77,21 +70,11 @@ export function App()
     return (
         <StudioContext.Provider value={studio}>
             <Routes>
-                <Route path="/" element={<Navigate to={studio.me.role === 'manager' ? '/manage' : '/me'} replace />} />
-                <Route path="/me/*" element={<EmployeeShell />} />
-                <Route path="/*" element={studio.me.role === 'manager' ? <ManageShell /> : <EmployeeOnly />} />
+                <Route path="/*" element={<Shell />} />
             </Routes>
             {toastMsg ? <div className={`toast ${toastMsg.error ? 'error' : ''}`} role="status">{toastMsg.text}</div> : null}
         </StudioContext.Provider>
     )
-}
-
-/** Employees reach records they can see (a task, a payslip) inside their own shell. */
-function EmployeeOnly()
-{
-    const loc = useLocation()
-    if (loc.pathname.startsWith('/records/')) return <EmployeeShell recordView />
-    return <Navigate to="/me" replace />
 }
 
 async function signOut()
@@ -100,107 +83,52 @@ async function signOut()
     window.location.href = '/'
 }
 
-function ManageShell()
+/** One shell for everyone: the tree, the projects, the people. Managers also get Settings. */
+function Shell()
 {
-    const { me, schema } = useStudioSafe()
+    const { me } = useStudioSafe()
     const [open, setOpen] = useState(false)
     const loc = useLocation()
     useEffect(() => setOpen(false), [loc.pathname])
-    const approvals = useApi<{ approvals: unknown[] }>('/api/approvals')
-    const on = (id: string) => schema.modules.some((m) => m.id === id)
-    const link = (to: string, label: string, icon: () => ReactNode, count?: number) => (
-        <NavLink to={to} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`} end={to === '/manage'}>
+    const isManager = me.role === 'manager'
+    const link = (to: string, label: string, icon: () => ReactNode) => (
+        <NavLink to={to} className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}>
             {icon()} {label}
-            {count ? <span className="nav-count">{count}</span> : null}
         </NavLink>
     )
+    const name = me.theme.name || me.company
     return (
         <div className="shell">
             <div className="topbar">
                 <button className="btn ghost sm" onClick={() => setOpen(true)} aria-label="Menu"><Icon.menu /></button>
-                <strong>{me.theme.name || me.company}</strong>
-                <NavLink to="/me" className="btn ghost sm">My day</NavLink>
+                <strong>{name}</strong>
+                <span />
             </div>
             <aside className={`sidebar ${open ? 'open' : ''}`}>
                 <div className="brand">
-                    <div className="brand-mark">{(me.theme.name || me.company).slice(0, 1)}</div>
-                    <div>{me.theme.name || me.company}<small>Studio OS</small></div>
+                    <div className="brand-mark">{name.slice(0, 1)}</div>
+                    <div>{name}<small>Code CRM</small></div>
                 </div>
-                {link('/manage', 'Today', Icon.today, approvals.data?.approvals.length)}
+                {link('/code', 'Tree', Icon.tree)}
                 {link('/projects', 'Projects', Icon.projects)}
-                {link('/code', 'Code tree', Icon.tree)}
-                {on('money') ? link('/money', 'Money', Icon.money) : null}
-                {on('people') ? link('/people', 'People', Icon.people) : null}
-                {on('sales') ? link('/sales', 'Sales', Icon.sales) : null}
-                {on('compliance') ? link('/compliance', 'Compliance', Icon.compliance) : null}
-                <div className="nav-section">Make it yours</div>
-                {link('/automations', 'Automations', Icon.automations)}
-                {link('/activity', 'Activity', Icon.activity)}
-                {link('/settings', 'Settings', Icon.settings)}
+                {link('/team', 'People', Icon.people)}
+                {isManager ? link('/settings', 'Settings', Icon.settings) : null}
                 <div className="sidebar-foot">
-                    <NavLink to="/me" className="nav-link"><Icon.swap /> My day</NavLink>
+                    <div className="nav-link small faint" style={{ cursor: 'default' }}>{me.name} · {isManager ? 'manager' : 'developer'}</div>
                     <button className="nav-link" style={{ border: 0, background: 'none', cursor: 'pointer', textAlign: 'left' }} onClick={signOut}><Icon.out /> Sign out</button>
                 </div>
             </aside>
             {open ? <div className="overlay" style={{ zIndex: 35 }} onClick={() => setOpen(false)} /> : null}
             <main className="main">
                 <Routes>
-                    <Route path="/manage" element={<Today />} />
-                    <Route path="/projects" element={<Projects />} />
                     <Route path="/code" element={<CodeTree />} />
+                    <Route path="/projects" element={<Projects />} />
+                    <Route path="/team" element={<Team />} />
                     <Route path="/records/:id" element={<RecordPage />} />
-                    <Route path="/money/*" element={<Money />} />
-                    <Route path="/people/*" element={<People />} />
-                    <Route path="/sales" element={<Sales />} />
-                    <Route path="/compliance" element={<Compliance />} />
-                    <Route path="/automations" element={<Automations />} />
-                    <Route path="/activity" element={<Activity />} />
-                    <Route path="/settings/*" element={<Settings />} />
-                    <Route path="*" element={<Navigate to="/manage" replace />} />
+                    {isManager ? <Route path="/settings/*" element={<Settings />} /> : null}
+                    <Route path="*" element={<Navigate to="/code" replace />} />
                 </Routes>
             </main>
         </div>
     )
 }
-
-function EmployeeShell({ recordView = false }: { recordView?: boolean })
-{
-    const { me } = useStudioSafe()
-    const tab = (to: string, label: string, icon: () => ReactNode) => (
-        <NavLink to={to} end={to === '/me'} className={({ isActive }) => `tab ${isActive ? 'active' : ''}`}>{icon()}{label}</NavLink>
-    )
-    return (
-        <>
-            <div className="phone-shell">
-                <div className="spread" style={{ marginBottom: 18 }}>
-                    <div className="row">
-                        <div className="brand-mark">{(me.theme.name || me.company).slice(0, 1)}</div>
-                        <strong>{me.theme.name || me.company}</strong>
-                    </div>
-                    <div className="row">
-                        {me.role === 'manager' ? <NavLink to="/manage" className="btn sm"><Icon.swap /> Manage</NavLink> : null}
-                        <button className="btn ghost sm" onClick={signOut} aria-label="Sign out"><Icon.out /></button>
-                    </div>
-                </div>
-                {recordView ? <RecordPage /> : (
-                    <Routes>
-                        <Route index element={<MyDay />} />
-                        <Route path="tasks" element={<MyTasks />} />
-                        <Route path="time" element={<MyTime />} />
-                        <Route path="claims" element={<MyClaims />} />
-                        <Route path="leave" element={<MyLeave />} />
-                        <Route path="*" element={<Navigate to="/me" replace />} />
-                    </Routes>
-                )}
-            </div>
-            <nav className="tabbar" aria-label="Employee">
-                {tab('/me', 'My day', Icon.today)}
-                {tab('/me/tasks', 'Tasks', Icon.tasks)}
-                {tab('/me/time', 'Time', Icon.time)}
-                {tab('/me/claims', 'Claims', Icon.receipt)}
-                {tab('/me/leave', 'Leave', Icon.leave)}
-            </nav>
-        </>
-    )
-}
-

@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
-import { ago, useApi } from '../api.ts'
+import { Link, useSearchParams } from 'react-router-dom'
+import { ago, api, useApi } from '../api.ts'
 import { Empty, PageHead, Pill } from '../ui.tsx'
 
 // ---- Data from /api/code ----
 
 interface Commit { sha: string; parents: string[]; author: string; email: string; date: string; subject: string }
 interface Graph { repo: string; defaultBranch: string; branches: { name: string; sha: string }[]; commits: Commit[]; fetchedAt: string | null }
-interface RepoRow { projectId: string; project: string; status: string; repo: string }
+export interface RepoRow
+{
+    projectId: string; project: string; status: string; repo: string; clientId: string; client: string
+    health?: 'attention' | 'watch' | 'good'; reasons?: string[]; openBranches?: number; lastCommit?: string | null
+}
 interface CommitDetail { commit: Commit & { body: string }; files: { path: string; added: number | null; removed: number | null }[]; patch: string; truncated: boolean }
 interface FileAt { path: string; content: string; binary: boolean; truncated: boolean; size: number }
 
@@ -34,6 +38,10 @@ interface Placed { x: number; y: number; limb: number }
 
 const LANE = 84
 const GROUND = 90
+
+const short = (name: string) => (name.length > 24 ? `${name.slice(0, 23)}…` : name)
+const tagLabel = (l: Limb) => (l.id === 0 ? l.name : `${short(l.name)}${l.open ? '' : l.pr ? ` · ${l.pr}` : ' · merged'}`)
+const tagWidth = (l: Limb) => tagLabel(l).length * 7.6 + 18
 
 function grow(g: Graph, minWidth = 0)
 {
@@ -112,8 +120,10 @@ function grow(g: Graph, minWidth = 0)
 
     const maxRight = Math.max(0, ...limbs.filter((l) => l.side === 1).map((l) => l.lane))
     const maxLeft = Math.max(0, ...limbs.filter((l) => l.side === -1 && l.id !== 0).map((l) => l.lane))
-    const left = 110 + maxLeft * LANE + 150
-    const right = maxRight * LANE + 230
+    // Leave room for each branch's name tag, so no label is cut off at the edge.
+    const reach = (side: 1 | -1) => Math.max(0, ...limbs.filter((l) => l.id !== 0 && l.side === side).map((l) => l.lane * LANE + 30 + 18 + tagWidth(l) + 24))
+    const left = Math.max(70 + maxLeft * LANE + 150, 70 + reach(-1))
+    const right = Math.max(maxRight * LANE + 230, reach(1))
     const extra = Math.max(0, minWidth - left - right)
     const cx = left + extra / 2
     const width = left + right + extra
@@ -168,7 +178,7 @@ function Leaf({ x, y, side, color, k }: { x: number; y: number; side: 1 | -1; co
     )
 }
 
-function Tree({ g, selected, onSelect }: { g: Graph; selected: string | null; onSelect: (sha: string) => void })
+function Tree({ g, selected, onSelect, who }: { g: Graph; selected: string | null; onSelect: (sha: string) => void; who: string | null })
 {
     const [box, setBox] = useState<HTMLDivElement | null>(null)
     const [minWidth, setMinWidth] = useState(0)
@@ -180,6 +190,12 @@ function Tree({ g, selected, onSelect }: { g: Graph; selected: string | null; on
     }, [box])
     const t = useMemo(() => grow(g, minWidth), [g, minWidth])
     const { limbs, at, cx, width, height, groundY, bySha, ROW } = t
+    // A wide tree shrinks a little to fit; past that it scrolls, opened on the trunk.
+    const scale = minWidth && width > minWidth ? Math.max(0.74, minWidth / width) : 1
+    useEffect(() => {
+        const wrap = box?.parentElement
+        if (wrap && width * scale > wrap.clientWidth) wrap.scrollLeft = cx * scale - wrap.clientWidth / 2
+    }, [box, g, width, scale, cx])
     if (!limbs.length) return <div ref={setBox}><Empty title="No commits yet">Push a first commit and the tree starts growing.</Empty></div>
     const trunk = limbs[0]!
     const trunkPts: [number, number][] = [[cx, groundY + 8], ...trunk.commits.map((s) => [at.get(s)!.x, at.get(s)!.y] as [number, number])]
@@ -188,7 +204,7 @@ function Tree({ g, selected, onSelect }: { g: Graph; selected: string | null; on
 
     return (
         <div ref={setBox}>
-        <svg className="tree-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Commit tree for ${g.repo}`}>
+        <svg className="tree-svg" width={width * scale} height={height * scale} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Commit tree for ${g.repo}`}>
             <defs>
                 <linearGradient id="soil" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#8a6a48" /><stop offset="1" stopColor="#5d4632" /></linearGradient>
                 <radialGradient id="canopy"><stop offset="0" stopColor="#5fb36b" stopOpacity="0.28" /><stop offset="1" stopColor="#5fb36b" stopOpacity="0" /></radialGradient>
@@ -244,7 +260,7 @@ function Tree({ g, selected, onSelect }: { g: Graph; selected: string | null; on
                 const c = bySha.get(sha)!
                 const isSel = selected === sha
                 return (
-                    <g key={sha} className="tree-node" onClick={() => onSelect(sha)}>
+                    <g key={sha} className="tree-node" onClick={() => onSelect(sha)} opacity={who && c.email !== who ? 0.18 : 1}>
                         <title>{`${c.subject}\n${c.author} · ${new Date(c.date).toLocaleString('en-ZA')}`}</title>
                         {l.id !== 0 ? <Leaf x={p.x} y={p.y} side={l.side} color={l.open ? LEAF_OPEN : LEAF_MERGED} k={k} /> : null}
                         {isSel ? <circle cx={p.x} cy={p.y} r={13} fill="none" stroke="#f59e0b" strokeWidth={3.5} /> : null}
@@ -257,18 +273,64 @@ function Tree({ g, selected, onSelect }: { g: Graph; selected: string | null; on
             {/* Name tags at the tip of each branch. */}
             {limbs.map((l) => {
                 const tip = at.get(l.commits.at(-1)!)!
-                const label = l.id === 0 ? l.name : `${l.name}${l.open ? '' : l.pr ? ` · merged ${l.pr}` : ' · merged'}`
-                const w = label.length * 7.6 + 18
+                const label = tagLabel(l)
+                const w = tagWidth(l)
                 const x = l.id === 0 ? tip.x - w / 2 : l.side === 1 ? tip.x + 18 : tip.x - 18 - w
                 const y = l.id === 0 ? tip.y - 42 : tip.y - 13
                 return (
                     <g key={`tag${l.id}`} className={`tree-tag ${l.open ? 'open' : 'merged'} ${l.id === 0 ? 'trunk' : ''}`} onClick={() => onSelect(l.commits.at(-1)!)}>
+                        <title>{l.open || l.id === 0 ? l.name : `${l.name}, merged${l.pr ? ` as ${l.pr}` : ''}`}</title>
                         <rect x={x} y={y} width={w} height={24} rx={6} />
                         <text x={x + 9} y={y + 16}>{label}</text>
                     </g>
                 )
             })}
         </svg>
+        </div>
+    )
+}
+
+// ---- The agent's plain-words explanation ----
+
+interface Explanation { summary: string; review: string[]; model: string | null }
+
+function Explain({ repo, sha, limb }: { repo: string; sha: string; limb: Limb | undefined })
+{
+    const [busy, setBusy] = useState<'commit' | 'branch' | null>(null)
+    const [result, setResult] = useState<{ what: string; e: Explanation } | null>(null)
+    const [error, setError] = useState<string | null>(null)
+    useEffect(() => { setResult(null); setError(null) }, [sha])
+    const branch = limb && limb.id !== 0 && limb.fork ? limb : null
+    const ask = async (what: 'commit' | 'branch') => {
+        setBusy(what)
+        setError(null)
+        try {
+            const body = what === 'branch' && branch
+                ? { sha: branch.commits.at(-1), base: branch.fork, branch: branch.name }
+                : { sha }
+            const e = await api<Explanation>(`/api/code/explain?repo=${encodeURIComponent(repo)}`, { body })
+            setResult({ what: what === 'branch' && branch ? branch.name : 'this commit', e })
+        } catch (err) {
+            setError((err as Error).message)
+        } finally {
+            setBusy(null)
+        }
+    }
+    return (
+        <div className="explain">
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="btn sm" disabled={!!busy} onClick={() => ask('commit')}>{busy === 'commit' ? 'Reading…' : 'Explain this commit'}</button>
+                {branch ? <button className="btn sm" disabled={!!busy} onClick={() => ask('branch')}>{busy === 'branch' ? 'Reading the branch…' : `Explain the whole branch`}</button> : null}
+            </div>
+            {error ? <div className="small" style={{ color: 'var(--critical)', marginTop: 8 }}>{error}</div> : null}
+            {result ? (
+                <div className="explain-card">
+                    <div className="small faint">The agent on {result.what}</div>
+                    <p>{result.e.summary}</p>
+                    {result.e.review.length ? <ul>{result.e.review.map((r) => <li key={r}>{r}</li>)}</ul> : null}
+                    <div className="small faint">{result.e.model ? `Written by ${result.e.model} on Vultr Serverless Inference` : 'Written from the facts, without a model'}</div>
+                </div>
+            ) : null}
         </div>
     )
 }
@@ -352,6 +414,7 @@ function CommitPanel({ repo, sha, limb }: { repo: string; sha: string; limb: Lim
                         <h2>{d.commit.subject}</h2>
                         <div className="small faint">{d.commit.author} · {ago(d.commit.date)} · {new Date(d.commit.date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
                         {d.commit.body ? <p className="small" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>{d.commit.body}</p> : null}
+                        <Explain repo={repo} sha={d.commit.sha} limb={limb} />
                     </div>
                     <div className="tabs" style={{ margin: '0 16px 12px' }}>
                         <button className={tab === 'changes' ? 'on' : ''} onClick={() => setTab('changes')}>Changes · {d.files.length}</button>
@@ -380,6 +443,42 @@ function CommitPanel({ repo, sha, limb }: { repo: string; sha: string; limb: Lim
     )
 }
 
+// ---- Who grew this tree ----
+
+const AVATAR = ['#0f766e', '#b45309', '#7c3aed', '#be123c', '#1d4ed8', '#4d7c0f', '#a16207', '#0e7490']
+export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join('')
+export const colour = (key: string) => AVATAR[[...key].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7) % AVATAR.length]!
+
+function Contributors({ commits, who, onPick }: { commits: Commit[]; who: string | null; onPick: (email: string | null) => void })
+{
+    const people = useMemo(() => {
+        const by = new Map<string, { name: string; email: string; count: number; last: string }>()
+        for (const c of commits) {
+            const p = by.get(c.email) ?? { name: c.author, email: c.email, count: 0, last: c.date }
+            p.count++
+            if (c.date > p.last) p.last = c.date
+            by.set(c.email, p)
+        }
+        return [...by.values()].sort((a, b) => b.count - a.count)
+    }, [commits])
+    return (
+        <div className="contributors card">
+            <div className="spread"><span className="small faint">Contributors · tap one to light up their work</span><Link className="small" to="/team">Everyone's work →</Link></div>
+            <div className="contributor-row">
+                {people.map((p) => (
+                    <button key={p.email} className={`contributor ${who === p.email ? 'on' : ''} ${who && who !== p.email ? 'dim' : ''}`} onClick={() => onPick(who === p.email ? null : p.email)} title={p.email}>
+                        <span className="avatar" style={{ background: colour(p.email) }}>{initials(p.name)}</span>
+                        <span>
+                            <b>{p.name}</b>
+                            <span className="small faint">{p.count} {p.count === 1 ? 'commit' : 'commits'} · last {ago(p.last)}</span>
+                        </span>
+                    </button>
+                ))}
+            </div>
+        </div>
+    )
+}
+
 // ---- The page ----
 
 export function CodeTree()
@@ -390,11 +489,14 @@ export function CodeTree()
     const repo = params.get('repo') ?? repos[0]?.repo ?? null
     const graph = useApi<Graph>(repo ? `/api/code/graph?repo=${encodeURIComponent(repo)}` : null)
     const [selected, setSelected] = useState<string | null>(null)
+    const [who, setWho] = useState<string | null>(null)
     const tree = useMemo(() => (graph.data ? grow(graph.data) : null), [graph.data])
 
     useEffect(() => {
         // Start on the newest commit, so the panel is never empty.
-        if (graph.data && (!selected || !graph.data.commits.some((c) => c.sha === selected))) setSelected(graph.data.commits[0]?.sha ?? null)
+        const asked = params.get('sha')
+        if (graph.data && asked && graph.data.commits.some((c) => c.sha === asked)) setSelected(asked)
+        else if (graph.data && (!selected || !graph.data.commits.some((c) => c.sha === selected))) setSelected(graph.data.commits[0]?.sha ?? null)
     }, [graph.data])
 
     const project = repos.find((r) => r.repo === repo)
@@ -404,13 +506,17 @@ export function CodeTree()
 
     return (
         <div>
-            <PageHead title="Code tree" sub="Every project's repo as a living tree. Main is the trunk, branches grow off it, merged work grafts back in. Tap any commit to see what changed and the code as it was.">
-                {repos.length ? (
-                    <select className="select" value={repo ?? ''} onChange={(e) => { setSelected(null); setParams({ repo: e.target.value }) }}>
-                        {repos.map((r) => <option key={r.repo} value={r.repo}>{r.project} · {r.repo}</option>)}
-                    </select>
-                ) : null}
-            </PageHead>
+            <PageHead title="Code tree" sub="Main is the trunk, branches grow off it, merged work grafts back in. Tap any commit to see what changed and the code as it was." />
+            {repos.length ? (
+                <div className="project-switch">
+                    {repos.map((r) => (
+                        <button key={r.repo} className={r.repo === repo ? 'on' : ''} onClick={() => { setSelected(null); setWho(null); setParams({ repo: r.repo }) }} title={r.reasons?.length ? r.reasons.join('\n') : 'All clear'}>
+                            <span className={`health ${r.health ?? 'none'}`} />
+                            <span><b>{r.project}</b><span className="small faint">{r.client || r.repo}</span></span>
+                        </button>
+                    ))}
+                </div>
+            ) : null}
             {list.data && !list.data.enabled ? <Empty title="The code tree is off">The server needs git installed to keep repos on its disk.</Empty> : null}
             {list.data && list.data.enabled && !repos.length ? <Empty title="No repos linked yet">Add a GitHub repo to a project (owner/name) and its tree appears here.</Empty> : null}
             {repo && graph.error ? <Empty title="Could not read this repo">{graph.error}</Empty> : null}
@@ -424,10 +530,17 @@ export function CodeTree()
                         <span className="faint" style={{ marginLeft: 'auto' }}>{graph.data.fetchedAt ? `Synced ${ago(graph.data.fetchedAt)} · the server fetches every 5 minutes` : ''}</span>
                         <button className="btn sm" onClick={graph.reload}>Refresh</button>
                     </div>
+                    {project?.reasons?.length ? (
+                        <div className={`health-note ${project.health}`}>
+                            <span className={`health ${project.health}`} />
+                            {project.reasons.join(' · ')}
+                        </div>
+                    ) : null}
                     <div className="code-layout">
-                        <div className="card tree-wrap"><Tree g={graph.data} selected={selected} onSelect={setSelected} /></div>
+                        <div className="card tree-wrap"><Tree g={graph.data} selected={selected} onSelect={setSelected} who={who} /></div>
                         {selected && repo ? <CommitPanel repo={repo} sha={selected} limb={limb} /> : null}
                     </div>
+                    <Contributors commits={graph.data.commits} who={who} onPick={setWho} />
                 </>
             ) : repo && !graph.error ? <div className="empty">Growing the tree…</div> : null}
         </div>

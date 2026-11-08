@@ -14,7 +14,7 @@ interface Detail
 
 const LIST_COLUMNS: Record<string, string[]> = {
     task: ['assignee', 'due'],
-    phase: ['order', 'share', 'due'],
+    phase: ['order', 'due'],
     invoice: ['number', 'amount', 'due'],
     time: ['user', 'date', 'hours'],
     payment: ['amount', 'date'],
@@ -25,7 +25,7 @@ const LIST_COLUMNS: Record<string, string[]> = {
 export function RecordPage()
 {
     const { id = '' } = useParams()
-    const { type, me, toast } = useStudio()
+    const { type, me, toast, schema } = useStudio()
     const { data, error, reload } = useApi<Detail>(`/api/record/${id}`)
     const [editing, setEditing] = useState(false)
     if (error) return <Empty title="Not found">{error}</Empty>
@@ -60,14 +60,14 @@ export function RecordPage()
                     </select>
                 ) : null}
                 {canEdit ? <button className="btn" onClick={() => setEditing(true)}>Edit</button> : null}
-                <RecordActions record={record} exclude={['task.move', 'phase.complete']} />
+                <RecordActions record={record} exclude={['task.move', 'phase.complete', ...schema.actions.map((a) => a.name).filter((n) => /^(invoice|expense|bank|payroll|payslip|lead|time)\./.test(n))]} />
             </PageHead>
 
             {record.type === 'project' ? <ProjectView record={record} children={children} /> : null}
 
             <div className="card card-pad">
                 <div className="kv">
-                    {rt.fields.filter((f) => f.key !== 'fingerprint').map((f) => (
+                    {rt.fields.filter((f) => f.key !== 'fingerprint' && f.kind !== 'money' && !f.sensitive).map((f) => (
                         <div key={f.key} style={{ display: 'contents' }}>
                             <div className="k">{f.label}{f.custom ? <span className="faint small"> · custom</span> : null}</div>
                             <div><FieldValue field={f} value={record.data[f.key]} /></div>
@@ -76,7 +76,7 @@ export function RecordPage()
                 </div>
             </div>
 
-            {Object.entries(children).filter(([t]) => record.type !== 'project' || !['task', 'phase'].includes(t)).map(([t, list]) => {
+            {Object.entries(children).filter(([t]) => !HIDDEN.includes(t) && (record.type !== 'project' || !['task', 'phase'].includes(t))).map(([t, list]) => {
                 const crt = type(t)
                 if (!crt || list.length === 0) return null
                 return (
@@ -116,6 +116,9 @@ function describeEvent(e: Detail['events'][number]): string
     return e.name.replace(/[._]/g, ' ')
 }
 
+/** Money and back-office records stay in the data but not on screen: this is a code CRM. */
+const HIDDEN = ['invoice', 'payment', 'quote', 'expense', 'time', 'payslip', 'claim', 'lead']
+
 const LANES = ['To do', 'In progress', 'In review', 'Done']
 
 function ProjectView({ record, children }: { record: StoredRecord; children: Record<string, StoredRecord[]> })
@@ -124,7 +127,6 @@ function ProjectView({ record, children }: { record: StoredRecord; children: Rec
     const [adding, setAdding] = useState(false)
     const phases = [...(children.phase ?? [])].sort((a, b) => Number(a.data.order) - Number(b.data.order))
     const tasks = children.task ?? []
-    const invoices = children.invoice ?? []
     const current = phases.find((p) => p.status !== 'Done')
     const taskType = type('task')
     const lanes = taskType?.statuses ?? LANES
@@ -139,20 +141,16 @@ function ProjectView({ record, children }: { record: StoredRecord; children: Rec
             {phases.length ? (
                 <section style={{ marginBottom: 24 }}>
                     <div className="spread" style={{ marginBottom: 10 }}>
-                        <h2>Phases and payments</h2>
-                        {record.data.value !== undefined ? <span className="muted num">Project value {money(record.data.value, me.currency)}</span> : null}
+                        <h2>Phases</h2>
                     </div>
                     <div className="phases">
                         {phases.map((p) => {
-                            const inv = invoices.find((i) => i.data.phase === p.id)
                             return (
                                 <Link key={p.id} to={`/records/${p.id}`} className={`phase ${p.status === 'Done' ? 'done' : ''} ${current?.id === p.id ? 'current' : ''}`} style={{ textDecoration: 'none' }}>
                                     <div className="small faint">Phase {p.data.order}{p.data.milestone ? ` · milestone #${p.data.milestone}` : ''}</div>
                                     <div style={{ fontWeight: 600, margin: '2px 0 8px' }}>{p.title}</div>
-                                    {p.data.share !== undefined ? <div className="share">{Math.round(Number(p.data.share) * 100)}%</div> : null}
                                     <div className="row small" style={{ marginTop: 6 }}>
                                         <StatusPill status={p.status} />
-                                        {inv ? <Pill tone={inv.status === 'Paid' ? 'good' : 'warning'}>{String(inv.data.number)} {inv.status.toLowerCase()}</Pill> : null}
                                     </div>
                                 </Link>
                             )
