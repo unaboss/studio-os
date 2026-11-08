@@ -180,8 +180,10 @@ function lineage(t: Grown, tip: string): string[]
 
 type Pt = [number, number]
 
-/** A filled, tapering limb through points, smooth like wood rather than a line. */
-function limbPath(points: Pt[], width: (u: number) => number, limb: boolean): string
+interface Geo { d: string; left: Pt[]; right: Pt[]; mid: Pt[]; w: number[]; len: number }
+
+/** A tapering limb through points: its outline, plus the edges and centre we draw grain and rings from. */
+function limbGeo(points: Pt[], width: (u: number) => number, limb: boolean): Geo | null
 {
     const samples: Pt[] = []
     for (let i = 1; i < points.length; i++) {
@@ -198,22 +200,107 @@ function limbPath(points: Pt[], width: (u: number) => number, limb: boolean): st
             samples.push([a * x0 + b * c1[0] + c * c2[0] + d * x1, a * y0 + b * c1[1] + c * c2[1] + d * y1])
         }
     }
-    if (samples.length < 2) return ''
+    if (samples.length < 2) return null
     const left: Pt[] = []
     const right: Pt[] = []
+    const ws: number[] = []
+    let len = 0
     samples.forEach(([x, y], i) => {
         const [px, py] = samples[Math.max(0, i - 1)]!
         const [nx, ny] = samples[Math.min(samples.length - 1, i + 1)]!
-        const len = Math.hypot(nx - px, ny - py) || 1
+        if (i) len += Math.hypot(x - px, y - py)
+        const l = Math.hypot(nx - px, ny - py) || 1
         const w = width(i / (samples.length - 1)) / 2
-        const ox = (-(ny - py) / len) * w
-        const oy = ((nx - px) / len) * w
+        ws.push(w)
+        const ox = (-(ny - py) / l) * w
+        const oy = ((nx - px) / l) * w
         left.push([x + ox, y + oy])
         right.push([x - ox, y - oy])
     })
     const f = (p: Pt) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`
-    const tipR = (width(1) / 2).toFixed(1)
-    return `M${left.map(f).join(' L')} A${tipR},${tipR} 0 0 1 ${f(right.at(-1)!)} L${[...right].reverse().map(f).join(' L')} Z`
+    const tipR = ws.at(-1)!.toFixed(1)
+    return { d: `M${left.map(f).join(' L')} A${tipR},${tipR} 0 0 1 ${f(right.at(-1)!)} L${[...right].reverse().map(f).join(' L')} Z`, left, right, mid: samples, w: ws, len }
+}
+
+const limbPath = (points: Pt[], width: (u: number) => number, limb: boolean) => limbGeo(points, width, limb)?.d ?? ''
+
+/** Wood as line art: an outline, grain lines on the shaded side and cross-section rings, so it reads in 3D. */
+function Wood({ geo, className, rings = true }: { geo: Geo | null; className: string; rings?: boolean })
+{
+    if (!geo) return null
+    const f = (p: Pt) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`
+    const n = geo.mid.length
+    const along = (k: number) => {
+        // A grain line k of the way from the centre to the shaded (right-hand) edge; negative is the lit side.
+        const pts = geo.mid.map((m, i) => {
+            const e = k >= 0 ? geo.right[i]! : geo.left[i]!
+            const a = Math.abs(k)
+            return [m[0] + (e[0] - m[0]) * a, m[1] + (e[1] - m[1]) * a] as Pt
+        })
+        // Grain fades out before the fine tip.
+        const stop = Math.max(2, Math.floor(n * 0.82))
+        return `M${pts.slice(0, stop).map(f).join(' L')}`
+    }
+    const ringEvery = Math.max(3, Math.round(n / Math.max(1, geo.len / 38)))
+    const ringPaths: string[] = []
+    if (rings) {
+        for (let i = ringEvery; i < n - 3; i += ringEvery) {
+            if (geo.w[i]! < 2.6) break
+            const l = geo.left[i]!
+            const r = geo.right[i]!
+            const m = geo.mid[i]!
+            const [px, py] = geo.mid[i - 1]!
+            const [nx, ny] = geo.mid[Math.min(n - 1, i + 1)]!
+            const tl = Math.hypot(nx - px, ny - py) || 1
+            const bulge = geo.w[i]! * 0.55
+            // Bowed against the growth, like an ellipse seen from a little above.
+            const c: Pt = [m[0] - ((nx - px) / tl) * bulge, m[1] - ((ny - py) / tl) * bulge]
+            ringPaths.push(`M${f(l)} Q${f(c)} ${f(r)}`)
+        }
+    }
+    const wide = Math.max(...geo.w) > 4
+    return (
+        <g className={`wood ${className}`}>
+            <path className="wood-body" d={geo.d} />
+            {wide ? <path className="wood-grain" d={along(0.55)} /> : null}
+            {wide ? <path className="wood-grain" d={along(0.82)} /> : null}
+            {wide && Math.max(...geo.w) > 8 ? <path className="wood-grain light" d={along(-0.5)} /> : null}
+            {ringPaths.map((d, i) => <path key={i} className="wood-ring" d={d} />)}
+        </g>
+    )
+}
+
+/** The crown, drawn the way an illustrator would: overlapping scalloped outlines with a little hatching. */
+function Crown({ clusters, kind }: { clusters: { key: string; x: number; y: number; r: number }[]; kind: 'live' | 'old' })
+{
+    const blobs: { k: string; x: number; y: number; r: number }[] = []
+    for (const c of clusters) {
+        const n = c.r > 60 ? 10 : c.r > 30 ? 6 : 4
+        for (let j = 0; j < n; j++) {
+            const ang = (j / n) * Math.PI * 2 + seeded(c.key, j) * 0.8
+            const dist = c.r * (0.45 + seeded(c.key, j + 5) * 0.25)
+            blobs.push({ k: `${c.key}${j}`, x: c.x + Math.cos(ang) * dist, y: c.y + Math.sin(ang) * dist * 0.75, r: c.r * (0.42 + seeded(c.key, j + 11) * 0.22) })
+        }
+        blobs.push({ k: `${c.key}c`, x: c.x, y: c.y, r: c.r * 0.55 })
+    }
+    // Upper masses first, so lower ones overlap them like foliage seen from the front.
+    blobs.sort((a, b) => a.y - b.y)
+    return (
+        <g className={`crown ${kind}`}>
+            {blobs.map((b) => (
+                <g key={b.k}>
+                    <circle className="crown-mass" cx={b.x} cy={b.y} r={b.r} />
+                    <path className="crown-hatch" d={`M${(b.x + b.r * 0.62 * Math.cos(0.35)).toFixed(1)},${(b.y + b.r * 0.62 * Math.sin(0.35)).toFixed(1)} A${(b.r * 0.62).toFixed(1)},${(b.r * 0.62).toFixed(1)} 0 0 1 ${(b.x + b.r * 0.62 * Math.cos(1.9)).toFixed(1)},${(b.y + b.r * 0.62 * Math.sin(1.9)).toFixed(1)}`} />
+                </g>
+            ))}
+        </g>
+    )
+}
+
+const seeded = (key: string, n: number) => {
+    let h = 2166136261
+    for (const ch of key + n) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0
+    return h / 4294967295
 }
 
 function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
@@ -238,7 +325,8 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
     const trunk = limbs[0]!
     const trunkVisible = trunk.commits.filter(seen)
     const trunkPts: Pt[] = [[cx, groundY + 4], ...trunkVisible.map((s) => [at.get(s)!.x, at.get(s)!.y] as Pt)]
-    const trunkW = (u: number) => 2.4 + 6 * (1 - u) ** 0.8 + 5 * Math.max(0, 1 - u * 8) ** 2
+    const trunkBase = Math.min(48, 26 + trunk.commits.length * 1.5)
+    const trunkW = (u: number) => 5 + (trunkBase - 5) * (1 - u) ** 0.85 + 14 * Math.max(0, 1 - u * 9) ** 2
     const github = (email: string) => people.find((p) => p.email.toLowerCase() === email.toLowerCase())?.github ?? null
     const dateEvery = Math.max(1, Math.round(150 / ROW))
     const months = new Set<string>()
@@ -267,14 +355,26 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
             {/* Ground: one hairline and a few fine roots. */}
             <line x1={cx - 240} x2={cx + 240} y1={groundY + 2} y2={groundY + 2} stroke="url(#tree-ground)" strokeWidth={1} />
             {[-1, 1].map((d) => [0, 1].map((r) => (
-                <path key={`${d}${r}`} className="t-wood" d={limbPath([[cx + d * 3, groundY - 4], [cx + d * (22 + r * 30), groundY + 16 + r * 6]], (u) => (3 - r * 1.2) * (1 - u) + 0.8, false)} />
+                <Wood key={`${d}${r}`} className="root" rings={false} geo={limbGeo([[cx + d * 4, groundY - 6], [cx + d * (34 + r * 36), groundY + 14 + r * 8]], (u) => (9 - r * 3.5) * (1 - u) + 1.2, false)} />
             )))}
+
+            {/* The crown, behind the wood: fuller over live work, faint over merged work. */}
+            <Crown kind="old" clusters={limbs.filter((l) => l.id !== 0 && !live(l) && l.commits.some(seen)).map((l) => { const p = at.get(l.commits.filter(seen).at(-1)!)!; return { key: `o${l.id}`, x: p.x + l.side * 6, y: p.y - 8, r: 26 } })} />
+            <Crown kind="live" clusters={[
+                ...(trunkVisible.length ? [(() => { const p = at.get(trunkVisible.at(-1)!)!; return { key: 'crown', x: p.x, y: p.y - 34, r: 96 } })()] : []),
+                ...limbs.filter((l) => live(l) && l.commits.some(seen)).flatMap((l) => {
+                    const vis = l.commits.filter(seen)
+                    const tip = at.get(vis.at(-1)!)!
+                    const mid = at.get(vis[Math.floor(vis.length / 2)]!)!
+                    return [{ key: `t${l.id}`, x: tip.x + l.side * 8, y: tip.y - 14, r: 40 }, ...(vis.length > 2 ? [{ key: `m${l.id}`, x: mid.x + l.side * 18, y: mid.y, r: 26 }] : [])]
+                }),
+            ]} />
 
             {/* Grafts: merged work joining back. */}
             {limbs.slice(1).filter((l) => l.mergeInto && at.has(l.mergeInto) && seen(l.mergeInto)).map((l) => {
                 const tip = at.get(l.commits.at(-1)!)!
                 const into = at.get(l.mergeInto!)!
-                return <path key={`m${l.id}`} className="t-graft" d={limbPath([[tip.x, tip.y], [into.x, into.y]], () => 1.4, false)} />
+                return <path key={`m${l.id}`} className="t-graft" d={limbPath([[tip.x, tip.y], [into.x, into.y]], () => 1.8, false)} />
             })}
 
             {/* Branches, then the trunk over their bases. */}
@@ -283,10 +383,10 @@ function Tree({ g, t, upto, selected, onSelect, who, box, people }: {
                 if (!vis.length) return null
                 const base = l.fork && at.has(l.fork) ? at.get(l.fork)! : at.get(l.commits[0]!)!
                 const pts: Pt[] = [[base.x, base.y], ...vis.map((s) => [at.get(s)!.x, at.get(s)!.y] as Pt)]
-                const thick = 2.6 + Math.min(l.commits.length, 8) * 0.45
-                return <path key={l.id} className={`t-wood grow ${live(l) ? '' : 'old'}`} d={limbPath(pts, (u) => 1.3 + (thick - 1.3) * (1 - u) ** 0.9, true)} />
+                const thick = 7 + Math.min(l.commits.length, 8) * 1.3
+                return <Wood key={l.id} className={`grow ${live(l) ? 'live' : 'old'}`} geo={limbGeo(pts, (u) => 2 + (thick - 2) * (1 - u) ** 0.9, true)} />
             })}
-            <path className="t-wood grow trunk" d={limbPath(trunkPts, trunkW, false)} />
+            <Wood className="grow trunk live" geo={limbGeo(trunkPts, trunkW, false)} />
 
 
             {/* One bud per commit. */}
