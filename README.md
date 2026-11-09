@@ -4,7 +4,7 @@
 
 It started as the system [North Tech Africa](https://northtech.africa), a two-person studio, wanted for itself: one place that answers "what is happening in each client's code, and who is on it?" without opening five GitHub tabs.
 
-> **Try the demo:** sign in as the manager or the developer from the buttons on the sign-in page. The demo studio, its clients and its three repositories are made up. The demo accounts are shared, so they can look around, ask the agent and plant a few repos but not change settings; start your own space to try everything.
+> **Try the live demo at [studio.dataquant.dev](https://studio.dataquant.dev):** sign in as the manager or the developer from the buttons on the sign-in page. The demo studio, its clients and its three repositories are made up; next to them sit two real projects, BidScope's front end and Studio OS itself, with a real contribution graph on the People page. The demo accounts are shared, so they can look around, ask the agent and plant a few repos but not change settings; start your own space to try everything.
 
 ---
 
