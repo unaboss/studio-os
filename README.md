@@ -81,7 +81,7 @@ DATABASE_URL=pglite: SESSION_SECRET=$(openssl rand -hex 32) \
 # open http://localhost:3000
 ```
 
-`SEED_DEMO=1` builds the three demo repositories with real git history (dated relative to today) and links them to the demo projects. Next to them, `DEMO_REPOS` (`owner/name=Title,…`), `DEMO_CLIENT` and `DEMO_OWNER` (`Full Name|github-login`) add real public repos and a real person to the demo, so visitors also see real trees and a real contribution graph. The Docker setup shows North Tech Africa's own repos by default. `DATABASE_URL=pglite:` runs Postgres in-process, so there is nothing else to install.
+`SEED_DEMO=1` builds the three demo repositories with real git history (dated relative to today) and links them to the demo projects. Next to them, `DEMO_REPOS` (`owner/name=Title,…`), `DEMO_CLIENT` and `DEMO_OWNER` and `DEMO_PEOPLE` (`Full Name|github-login`, comma-separated for several) add real public repos and real people to the demo, so visitors also see real trees and a real contribution graph. The Docker setup shows North Tech Africa's own repos by default. `DATABASE_URL=pglite:` runs Postgres in-process, so there is nothing else to install.
 
 Tests run against a real Postgres engine in memory and real git repos:
 

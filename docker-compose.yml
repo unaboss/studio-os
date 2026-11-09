@@ -35,6 +35,7 @@ services:
       PORT: "3000"
       # Real public repos and a real person shown in the demo next to the made-up studio.
       DEMO_OWNER: "${DEMO_OWNER:-Unarine Masiavhula|unaboss}"
+      DEMO_PEOPLE: "${DEMO_PEOPLE:-bardiavam|bardiavam}"
       DEMO_CLIENT: "${DEMO_CLIENT:-North Tech Africa}"
       DEMO_REPOS: "${DEMO_REPOS:-unaboss/bidscope-site=BidScope,unaboss/studio-os=Studio OS}"
     volumes:

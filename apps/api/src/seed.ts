@@ -230,12 +230,14 @@ export interface Showcase
 {
     /** A real person to add to the demo team, matched to commits by name. */
     readonly owner?: { name: string; github: string }
+    /** Other real contributors, matched to commits by name. */
+    readonly people?: readonly { name: string; github: string }[]
     /** The client the real projects sit under. */
     readonly client: string
     readonly repos: readonly { repo: string; title: string }[]
 }
 
-/** Reads the showcase from DEMO_OWNER ("Name|login"), DEMO_CLIENT and DEMO_REPOS ("owner/name=Title,…"). */
+/** Reads the showcase from DEMO_OWNER ("Name|login"), DEMO_PEOPLE ("Name|login,…"), DEMO_CLIENT and DEMO_REPOS ("owner/name=Title,…"). */
 export function showcaseFromEnv(env: Record<string, string | undefined>): Showcase | null
 {
     const repos = (env.DEMO_REPOS ?? '').split(',').map((s) => s.trim()).filter(Boolean).flatMap((s) => {
@@ -243,8 +245,17 @@ export function showcaseFromEnv(env: Record<string, string | undefined>): Showca
         return /^[\w.-]+\/[\w.-]+$/.test(repo) ? [{ repo, title: title || repo.split('/')[1]! }] : []
     })
     if (!repos.length) return null
-    const [name, github] = (env.DEMO_OWNER ?? '').split('|').map((x) => x.trim())
-    return { owner: name && github ? { name, github } : undefined, client: env.DEMO_CLIENT?.trim() || repos[0]!.repo.split('/')[0]!, repos }
+    const person = (s: string) => {
+        const [name, github] = s.split('|').map((x) => x.trim())
+        return name && github && /^[\w-]+$/.test(github) ? { name, github } : null
+    }
+    const people = (env.DEMO_PEOPLE ?? '').split(',').map(person).filter((p) => p !== null)
+    return {
+        owner: person(env.DEMO_OWNER ?? '') ?? undefined,
+        ...(people.length ? { people } : {}),
+        client: env.DEMO_CLIENT?.trim() || repos[0]!.repo.split('/')[0]!,
+        repos,
+    }
 }
 
 /**
@@ -260,18 +271,24 @@ export async function seedShowcase(db: Db, show: Showcase, opts: { now?: Date } 
     const lead: Actor = { id: 'usr_demo_thabo', kind: 'user', role: 'manager', name: 'Thabo Nkosi' }
     const ctx = createContext({ db, companyId: DEMO_COMPANY, actor: lead, registry, now: () => opts.now ?? new Date() })
 
+    // Nobody signs in as these people: their passwords are random and never shown.
+    const addPerson = async (id: string, p: { name: string; github: string }, role: string, jobTitle: string) => {
+        const exists = await db.query('select 1 from users where id = $1', [id])
+        if (exists.length > 0) return
+        await db.query(
+            'insert into users (id, company_id, email, name, role, password_hash, github_login) values ($1, $2, $3, $4, $5, $6, $7)',
+            [id, DEMO_COMPANY, `${p.github.toLowerCase()}@users.noreply.github.com`, p.name, role, await hashPassword(crypto.randomUUID()), p.github],
+        )
+        await ctx.records.create({ type: 'person', title: p.name, data: { user: id, jobTitle, github: p.github, leaveDays: 18 } })
+    }
     let ownerId: string | null = null
     if (show.owner) {
         ownerId = 'usr_demo_owner'
-        const exists = await db.query('select 1 from users where id = $1', [ownerId])
-        if (exists.length === 0) {
-            // Nobody signs in as this person: the password is random and never shown.
-            await db.query(
-                'insert into users (id, company_id, email, name, role, password_hash, github_login) values ($1, $2, $3, $4, $5, $6, $7)',
-                [ownerId, DEMO_COMPANY, `${show.owner.github.toLowerCase()}@users.noreply.github.com`, show.owner.name, 'manager', await hashPassword(crypto.randomUUID()), show.owner.github],
-            )
-            await ctx.records.create({ type: 'person', title: show.owner.name, data: { user: ownerId, jobTitle: 'Founder', github: show.owner.github, leaveDays: 18 } })
-        }
+        await addPerson(ownerId, show.owner, 'manager', 'Founder')
+    }
+    for (const p of show.people ?? []) {
+        if (p.github.toLowerCase() === show.owner?.github.toLowerCase()) continue
+        await addPerson(`usr_demo_gh_${p.github.toLowerCase()}`, p, 'employee', 'Developer')
     }
 
     const projects = await ctx.records.list('project', { limit: 1000 })
