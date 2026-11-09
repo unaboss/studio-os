@@ -13,3 +13,10 @@
 	header @framed X-Frame-Options "SAMEORIGIN"
 	reverse_proxy app:3000
 }
+
+# With a domain, anyone who opens the VM by its IP (or any other name) is
+# sent to the domain. remote.sh sets STUDIO_FALLBACK to ":80" only when
+# STUDIO_DOMAIN is set; otherwise this block answers a name nobody uses.
+{$STUDIO_FALLBACK:http://fallback.invalid} {
+	redir https://{$STUDIO_DOMAIN}{uri} permanent
+}

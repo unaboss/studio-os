@@ -70,6 +70,8 @@ services:
     environment:
       # Your domain gets HTTPS; without one, plain HTTP on port 80.
       STUDIO_DOMAIN: ${STUDIO_DOMAIN:-:80}
+      # With a domain, remote.sh sets this to ":80" so the bare IP redirects there.
+      STUDIO_FALLBACK: ${STUDIO_FALLBACK:-http://fallback.invalid}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

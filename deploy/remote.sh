@@ -52,9 +52,16 @@ if [ -f "$CI_ENV" ]; then
 fi
 
 # Secure cookies need HTTPS, which needs the domain.
-if grep -q '^STUDIO_DOMAIN=.\+' .env; then setkey COOKIE_SECURE 1; else setkey COOKIE_SECURE 0; fi
+# With a domain, the bare IP redirects to it.
+if grep -q '^STUDIO_DOMAIN=.\+' .env; then
+    setkey COOKIE_SECURE 1
+    setkey STUDIO_FALLBACK ':80'
+else
+    setkey COOKIE_SECURE 0
+    setkey STUDIO_FALLBACK 'http://fallback.invalid'
+fi
 
-export $(grep -E '^(POSTGRES_PASSWORD|STUDIO_DOMAIN)=' .env | xargs)
+export $(grep -E '^(POSTGRES_PASSWORD|STUDIO_DOMAIN|STUDIO_FALLBACK)=' .env | xargs)
 docker compose up -d --build --remove-orphans
 docker image prune -f >/dev/null
 
